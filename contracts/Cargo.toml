@@ -1,0 +1,7 @@
+[workspace]
+members = [
+    "remit-save",
+    "vault-pool",
+    "shared",
+]
+resolver = "2"
