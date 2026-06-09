@@ -91,4 +91,33 @@ pub enum DataKey {
     GlobalPlanCount(Address),
     GlobalRuleCount(Address),
     GlobalPoolCount,
+    Admin,
+    FeeRecipient,
+    ProtocolFeeBps,
+    Anchor(Address),
+}
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct RemittanceResult {
+    pub payout_amount: i128,
+    pub savings_amount: i128,
+    pub fee_amount: i128,
+}
+
+#[soroban_sdk::contracterror]
+#[derive(Copy, Clone, Debug, Eq, PartialEq, PartialOrd, Ord)]
+#[repr(u32)]
+pub enum RemitError {
+    NotInitialized = 1,
+    AlreadyInitialized = 2,
+    Unauthorized = 3,
+    InvalidAmount = 4,
+    InvalidBps = 5,
+    UserNotFound = 6,
+    RuleNotFound = 7,
+    PlanNotFound = 8,
+    PlanClosed = 9,
+    Overflow = 10,
+    InvalidSplitValue = 11,
 }
