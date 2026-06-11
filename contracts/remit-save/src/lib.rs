@@ -203,6 +203,18 @@ impl RemitSave {
         Ok(())
     }
 
+    pub fn set_anchor(
+        env: Env,
+        asset: Address,
+        anchor_address: Address,
+    ) -> Result<(), RemitError> {
+        let admin: Address = env.storage().instance().get(&DataKey::Admin).ok_or(RemitError::NotInitialized)?;
+        admin.require_auth();
+        
+        env.storage().instance().set(&DataKey::Anchor(asset), &anchor_address);
+        Ok(())
+    }
+
     pub fn execute_remittance(
         env: Env,
         sender: Address,
@@ -257,7 +269,7 @@ impl RemitSave {
             return Err(RemitError::InvalidAmount);
         }
         
-        let savings_amount = if rule.savings_plan_id.is_some() {
+        let savings_amount_incoming = if rule.savings_plan_id.is_some() {
             match rule.split_type {
                 SplitType::Percentage => {
                     net_amount
@@ -279,21 +291,35 @@ impl RemitSave {
             0
         };
         
-        let payout_amount = net_amount
-            .checked_sub(savings_amount)
+        let payout_amount_incoming = net_amount
+            .checked_sub(savings_amount_incoming)
             .ok_or(RemitError::Overflow)?;
             
         let token_client = soroban_sdk::token::Client::new(&env, &incoming_asset);
         
+        // --- Execute Transfers ---
+        
+        // 1. Collect Fees
         if fee_amount > 0 {
             token_client.transfer(&sender, &fee_recipient, &fee_amount);
         }
         
-        if payout_amount > 0 {
-            token_client.transfer(&sender, &rule.beneficiary, &payout_amount);
+        // 2. Execute Payout (Mocking Path Payment)
+        // In a real scenario, this would be a path_payment call.
+        // For the mock, we transfer USDC to the anchor who disburses local currency.
+        let anchor: Address = env.storage()
+            .instance()
+            .get(&DataKey::Anchor(rule.local_asset.clone()))
+            .unwrap_or(rule.beneficiary.clone()); // Fallback to beneficiary for testing
+            
+        if payout_amount_incoming > 0 {
+            token_client.transfer(&sender, &anchor, &payout_amount_incoming);
         }
         
-        if savings_amount > 0 {
+        // 3. Execute Savings (Mocking Path Payment)
+        // We transfer USDC to the contract (which acts as the vault/escrow)
+        let mut savings_amount_local = 0;
+        if savings_amount_incoming > 0 {
             if let Some(plan_id) = rule.savings_plan_id {
                 let plan_key = DataKey::Plan(sender.clone(), plan_id);
                 let mut plan: SavingsPlan = env.storage()
@@ -302,30 +328,52 @@ impl RemitSave {
                     .ok_or(RemitError::PlanNotFound)?;
                     
                 if let PlanStatus::Active = plan.status {
-                    token_client.transfer(&sender, &env.current_contract_address(), &savings_amount);
+                    token_client.transfer(&sender, &env.current_contract_address(), &savings_amount_incoming);
+                    
+                    // In a real scenario, savings_amount_local would be the output of a DEX path payment.
+                    // For this mock, we assume 1:1 conversion to local asset units.
+                    savings_amount_local = savings_amount_incoming;
+                        
                     plan.balance = plan.balance
-                        .checked_add(savings_amount)
+                        .checked_add(savings_amount_local)
                         .ok_or(RemitError::Overflow)?;
                     env.storage().persistent().set(&plan_key, &plan);
                 } else {
                     return Err(RemitError::PlanClosed);
                 }
-            } else {
-                return Err(RemitError::PlanNotFound);
             }
         }
+
+        // Mock conversion for payout event as well
+        let payout_amount_local = payout_amount_incoming;
+
+        // --- Emit Detailed Event ---
+        let rem_count_key = DataKey::GlobalRemittanceCount;
+        let rem_id: u32 = env.storage().instance().get(&rem_count_key).unwrap_or(0);
+        env.storage().instance().set(&rem_count_key, &(rem_id + 1));
+
+        use rs_shared::RemittanceExecuted;
+        let event = RemittanceExecuted {
+            remittance_id: rem_id,
+            sender: sender.clone(),
+            beneficiary: rule.beneficiary.clone(),
+            total_amount,
+            payout_amount: payout_amount_local,
+            savings_amount: savings_amount_local,
+            fee_amount,
+            incoming_asset: incoming_asset.clone(),
+            local_asset: rule.local_asset.clone(),
+            timestamp: env.ledger().timestamp(),
+        };
         
-        let topics = (
-            Symbol::new(&env, "remittance_executed"),
-            sender,
-            rule.beneficiary,
+        env.events().publish(
+            (Symbol::new(&env, "remittance_executed"), sender, rule.beneficiary),
+            event
         );
-        let event_data = (total_amount, payout_amount, savings_amount, fee_amount, incoming_asset);
-        env.events().publish(topics, event_data);
         
         Ok(RemittanceResult {
-            payout_amount,
-            savings_amount,
+            payout_amount: payout_amount_local,
+            savings_amount: savings_amount_local,
             fee_amount,
         })
     }
