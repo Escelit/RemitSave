@@ -1,0 +1,48 @@
+version: "3.9"
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: remitsave-postgres
+    environment:
+      POSTGRES_DB: remitsave
+      POSTGRES_USER: remitsave
+      POSTGRES_PASSWORD: remitsave_dev
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./backend/migrations:/docker-entrypoint-initdb.d
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U remitsave -d remitsave"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: remitsave-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  stellar:
+    image: stellar/quickstart:soroban-dev@sha256:0f3b8d4e2bf6f1d2c97c6dd9ab3a3c5fb9824b88b0c9e7247e58e123651d8c68
+    container_name: remitsave-stellar
+    command: ["--standalone", "--enable-soroban-rpc"]
+    ports:
+      - "8000:8000"
+      - "11626:11626"
+    volumes:
+      - stellar_data:/opt/stellar
+
+volumes:
+  postgres_data:
+  redis_data:
+  stellar_data:
