@@ -95,22 +95,22 @@ fn test_percentage_split() {
     // total = 1000
     // fee = 1000 * 50 / 10000 = 5
     // net = 995
-    // savings = 995 * 3000 / 10000 = 298.5 -> integer div -> 298
-    // payout = 995 - 298 = 697
+    // savings_incoming = 995 * 3000 / 10000 = 298.5 -> integer div -> 298
+    // payout_incoming = 995 - 298 = 697
     let result = client.execute_remittance(&sender, &rule_id, &1000, &token_address);
     
     assert_eq!(result.fee_amount, 5);
     assert_eq!(result.savings_amount, 298);
     assert_eq!(result.payout_amount, 697);
     
-    // Check balances
+    // Check balances (Incoming Asset)
     let token = soroban_sdk::token::Client::new(&env, &token_address);
     assert_eq!(token.balance(&sender), 9000); // 10000 - 1000
     assert_eq!(token.balance(&beneficiary), 697);
     assert_eq!(token.balance(&fee_recipient), 5);
     assert_eq!(token.balance(&client.address), 298);
     
-    // Verify savings plan balance in contract storage
+    // Verify savings plan balance in contract storage (Local Asset units - 1:1 mock)
     let plan = client.get_savings_plan(&sender, &plan_id);
     assert_eq!(plan.balance, 298);
 }
@@ -148,8 +148,8 @@ fn test_fixed_split() {
     // total = 1000
     // fee = 1000 * 100 / 10000 = 10
     // net = 990
-    // savings = 200 (fixed)
-    // payout = 990 - 200 = 790
+    // savings_incoming = 200 (fixed)
+    // payout_incoming = 990 - 200 = 790
     let result = client.execute_remittance(&sender, &rule_id, &1000, &token_address);
     
     assert_eq!(result.fee_amount, 10);
@@ -203,6 +203,38 @@ fn test_no_savings_plan() {
 }
 
 #[test]
+fn test_set_anchor() {
+    let (env, client, admin, fee_recipient, sender, beneficiary, token_address) = setup_test();
+    client.initialize(&admin, &fee_recipient, &0);
+    
+    let anchor = Address::generate(&env);
+    
+    // Only admin can set anchor
+    client.set_anchor(&token_address, &anchor);
+    
+    // Register user & create rule
+    client.register_user(&sender, &Symbol::new(&env, "NG"), &Bytes::from_slice(&env, b"+234"));
+    let rule = RemittanceRule {
+        sender: sender.clone(),
+        beneficiary: beneficiary.clone(),
+        incoming_asset: token_address.clone(),
+        local_asset: token_address.clone(),
+        split_type: SplitType::Percentage,
+        split_value: 0, 
+        savings_plan_id: None,
+        active: true,
+    };
+    let rule_id = client.set_remittance_rule(&sender, &rule);
+    
+    // Execute remittance - funds should go to anchor instead of beneficiary directly
+    client.execute_remittance(&sender, &rule_id, &1000, &token_address);
+    
+    let token = soroban_sdk::token::Client::new(&env, &token_address);
+    assert_eq!(token.balance(&anchor), 1000);
+    assert_eq!(token.balance(&beneficiary), 0);
+}
+
+#[test]
 fn test_withdraw_and_timelock() {
     let (env, client, admin, fee_recipient, sender, beneficiary, token_address) = setup_test();
     client.initialize(&admin, &fee_recipient, &0); // no fee
@@ -233,10 +265,10 @@ fn test_withdraw_and_timelock() {
     
     client.execute_remittance(&sender, &rule_id, &500, &token_address);
     
-    // Attempt withdrawal before lock_until (ledger timestamp defaults to 0 or similar in mock env)
+    // Attempt withdrawal before lock_until
     env.ledger().set_timestamp(50);
     let res = client.try_withdraw_from_plan(&sender, &plan_id);
-    assert!(res.is_err()); // should fail because it's locked until 100
+    assert!(res.is_err());
     
     // Advance ledger timestamp past lock_until
     env.ledger().set_timestamp(101);
@@ -245,6 +277,6 @@ fn test_withdraw_and_timelock() {
     assert_eq!(withdrawn, 500);
     
     let token = soroban_sdk::token::Client::new(&env, &token_address);
-    assert_eq!(token.balance(&sender), 10000); // sender got their 500 savings back
+    assert_eq!(token.balance(&sender), 10000); 
     assert_eq!(token.balance(&client.address), 0);
 }
