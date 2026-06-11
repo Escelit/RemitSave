@@ -83,6 +83,21 @@ pub struct VaultPool {
 
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
+pub struct RemittanceExecuted {
+    pub remittance_id: u32,
+    pub sender: Address,
+    pub beneficiary: Address,
+    pub total_amount: i128,             // in incoming_asset (e.g., USDC)
+    pub payout_amount: i128,            // in local_asset (already converted)
+    pub savings_amount: i128,           // in local_asset (already converted)
+    pub fee_amount: i128,               // in incoming_asset
+    pub incoming_asset: Address,        // what the sender sent (e.g., USDC)
+    pub local_asset: Address,           // what savings & payout are in (e.g., eNGN)
+    pub timestamp: u64,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub enum DataKey {
     User(Address),
     Plan(Address, u32),
@@ -91,10 +106,11 @@ pub enum DataKey {
     GlobalPlanCount(Address),
     GlobalRuleCount(Address),
     GlobalPoolCount,
+    GlobalRemittanceCount,
     Admin,
     FeeRecipient,
     ProtocolFeeBps,
-    Anchor(Address),
+    Anchor(Address), // Maps local_asset to Anchor address
 }
 
 #[contracttype]
