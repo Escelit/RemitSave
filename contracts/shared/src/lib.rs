@@ -110,7 +110,11 @@ pub enum DataKey {
     Admin,
     FeeRecipient,
     ProtocolFeeBps,
-    Anchor(Address), // Maps local_asset to Anchor address
+    Anchor(Address),
+    // Vault-pool specific keys
+    PoolLastUpdated(u32),
+    PoolUserBalance(Address, u32),
+    PoolUserDepositTime(Address, u32),
 }
 
 #[contracttype]
@@ -137,3 +141,22 @@ pub enum RemitError {
     Overflow = 10,
     InvalidSplitValue = 11,
 }
+
+#[soroban_sdk::contracterror]
+#[derive(Copy, Clone, Debug, Eq, PartialEq, PartialOrd, Ord)]
+#[repr(u32)]
+pub enum VaultError {
+    NotInitialized = 1,
+    AlreadyInitialized = 2,
+    Unauthorized = 3,
+    InvalidAmount = 4,
+    PoolNotFound = 5,
+    Overflow = 6,
+    InsufficientShares = 7,
+    InsufficientLiquidity = 8,
+    LockupActive = 9,
+    InvalidBps = 10,
+}
+
+pub const SHARE_PRICE_DENOM: i128 = 10_000_000; // 1e7, so 1.0 = 10_000_000
+pub const YEAR_SECS: u64 = 31_536_000; // 365 * 24 * 3600
