@@ -1,3 +1,11 @@
 target/
+backend/target/
 contracts/target/
 contracts/remit-save/test_snapshots/
+plan.md
+node_modules/
+scripts/node_modules/
+scripts/.deployment.json
+.env.deployment
+backend/migrations/*.swp
+*.swp

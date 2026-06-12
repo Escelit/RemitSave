@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
-use axum::http::{Method, Request};
+use axum::extract::{Request, State};
+use axum::http::Method;
 use axum::middleware::{self, Next};
 use axum::response::Response;
 use axum::routing::{get, post};
@@ -13,6 +14,10 @@ use tracing_subscriber::EnvFilter;
 
 mod jwt;
 
+#[cfg(test)]
+mod tests;
+
+#[derive(Clone)]
 struct AppState {
     db: PgPool,
     jwt_secret: String,
@@ -65,7 +70,7 @@ async fn health() -> Json<serde_json::Value> {
 }
 
 async fn register(
-    state: Arc<AppState>,
+    State(state): State<Arc<AppState>>,
     Json(req): Json<RegisterRequest>,
 ) -> Result<Json<RegisterResponse>, AppError> {
     if req.email.is_empty() || req.password.is_empty() {
@@ -137,9 +142,12 @@ async fn register(
 }
 
 async fn me(
-    state: Arc<AppState>,
-    claims: JwtClaims,
+    State(state): State<Arc<AppState>>,
+    req: Request,
 ) -> Result<Json<UserPublic>, AppError> {
+    let claims = req.extensions().get::<JwtClaims>().cloned().ok_or(
+        AppError::Unauthorized("No valid JWT claims found".into()),
+    )?;
     let user_id: uuid::Uuid = claims.sub.parse().map_err(|_| {
         AppError::Unauthorized("Invalid token claims".into())
     })?;
@@ -159,10 +167,10 @@ async fn me(
     Ok(Json(user.into()))
 }
 
-async fn auth_middleware<B>(
-    state: Arc<AppState>,
-    mut req: Request<B>,
-    next: Next<B>,
+async fn auth_middleware(
+    State(state): State<Arc<AppState>>,
+    mut req: Request,
+    next: Next,
 ) -> Result<Response, AppError> {
     let auth_header = req
         .headers()

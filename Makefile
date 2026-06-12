@@ -12,9 +12,13 @@ build-contracts:
 build-backend:
 	cd backend && cargo build --release
 
-test:
+test: test-contracts test-backend
+
+test-contracts:
 	cd contracts && cargo test
-	# cd backend && cargo test
+
+test-backend:
+	cd backend && cargo test
 
 clean:
 	cd contracts && cargo clean

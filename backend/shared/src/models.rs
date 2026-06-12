@@ -60,7 +60,7 @@ pub struct LoginResponse {
     pub token: String,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct UserPublic {
     pub id: Uuid,
     pub email: String,
@@ -87,7 +87,7 @@ impl From<User> for UserPublic {
     }
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct JwtClaims {
     pub sub: String,
     pub exp: usize,
