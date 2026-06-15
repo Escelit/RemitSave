@@ -1,3 +1,4 @@
+
 # 10-Day Intensive Development Plan: RemitSave Africa (65% Completion)
 
 This plan simulates a 10-day "sprint" to build the core engine of RemitSave Africa. By Day 10, the system will have a functional on-chain split mechanism, a working backend for user/rule management, and a high-fidelity frontend prototype.
