@@ -1,0 +1,23 @@
+{
+  "expo": {
+    "name": "RemitSave",
+    "slug": "diaspora-app",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "scheme": "remitsave",
+    "platforms": ["ios", "android", "web"],
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "africa.remitsave.app"
+    },
+    "android": {
+      "adaptiveIcon": {
+        "backgroundColor": "#0A1628"
+      },
+      "package": "africa.remitsave.app"
+    },
+    "plugins": [
+      "expo-secure-store"
+    ]
+  }
+}
