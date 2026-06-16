@@ -9,3 +9,4 @@ scripts/.deployment.json
 .env.deployment
 backend/migrations/*.swp
 *.swp
+Plan.md
