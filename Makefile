@@ -1,8 +1,11 @@
 # Makefile for RemitSave Africa
 
-.PHONY: all build test clean build-contracts build-backend
+.PHONY: all build test clean build-contracts build-backend bootstrap
 
 all: build
+
+bootstrap:
+	bash scripts/bootstrap.sh
 
 build: build-contracts build-backend
 
