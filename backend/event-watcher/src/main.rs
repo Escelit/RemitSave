@@ -28,6 +28,7 @@ struct GetEventsResponse {
     latest_ledger: String,
 }
 
+#[allow(dead_code)]
 #[derive(Debug, Deserialize)]
 struct EventResult {
     #[serde(rename = "ledger")]
@@ -48,6 +49,7 @@ struct EventValue {
     xdr: String,
 }
 
+#[allow(dead_code)]
 #[derive(Debug)]
 struct RemittanceExecuted {
     remittance_id: u32,

@@ -19,7 +19,7 @@ fn setup_test() -> (
     let env = Env::default();
     env.mock_all_auths();
 
-    let contract_id = env.register_contract(None, RemitSave);
+    let contract_id = env.register(RemitSave, ());
     let client = RemitSaveClient::new(&env, &contract_id);
 
     let admin = Address::generate(&env);
