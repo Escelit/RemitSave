@@ -7,16 +7,14 @@ use axum::response::Response;
 use axum::routing::{get, post};
 use axum::{Extension, Json, Router};
 use backend_shared::{AppError, JwtClaims};
+use base64::{engine::general_purpose, Engine as _};
 use bigdecimal::BigDecimal;
 use serde::{Deserialize, Serialize};
 use sqlx::PgPool;
+use stellar_xdr::curr::{Limits, ScAddress, ScSymbol, ScVal, WriteXdr};
 use tower_http::cors::{Any, CorsLayer};
 use tracing_subscriber::EnvFilter;
 use uuid::Uuid;
-use base64::{engine::general_purpose, Engine as _};
-use stellar_xdr::curr::{
-    Limits, ScAddress, ScSymbol, ScVal, WriteXdr,
-};
 
 #[cfg(test)]
 mod tests;
@@ -191,8 +189,7 @@ struct SendTransactionResponse {
 async fn main() {
     tracing_subscriber::fmt()
         .with_env_filter(
-            EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| "remit_service=info".into()),
+            EnvFilter::try_from_default_env().unwrap_or_else(|_| "remit_service=info".into()),
         )
         .init();
 
@@ -204,13 +201,13 @@ async fn main() {
         .unwrap_or_else(|_| "http://localhost:8000/soroban/rpc".into());
     let contract_id = std::env::var("REMIT_CONTRACT_ID")
         .unwrap_or_else(|_| "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA".into());
-    let sender_secret = std::env::var("SENDER_SECRET")
-        .unwrap_or_else(|_| "S...MOCKED...SECRET".into());
+    let sender_secret =
+        std::env::var("SENDER_SECRET").unwrap_or_else(|_| "S...MOCKED...SECRET".into());
 
     let db = backend_shared::init_pool(&database_url).await;
 
-    let state = Arc::new(AppState { 
-        db, 
+    let state = Arc::new(AppState {
+        db,
         jwt_secret: jwt_secret.clone(),
         soroban_rpc,
         contract_id,
@@ -224,7 +221,10 @@ async fn main() {
 
     let protected = Router::new()
         .route("/remit/rules", get(list_rules).post(create_rule))
-        .route("/remit/rules/{id}", get(get_rule).put(update_rule).delete(delete_rule))
+        .route(
+            "/remit/rules/{id}",
+            get(get_rule).put(update_rule).delete(delete_rule),
+        )
         .route("/remit/execute", post(execute_remittance))
         .route("/remit/history", get(get_history))
         .layer(middleware::from_fn_with_state(
@@ -239,7 +239,10 @@ async fn main() {
         .with_state(state);
 
     let listener = tokio::net::TcpListener::bind("0.0.0.0:3002").await.unwrap();
-    tracing::info!("remit-service listening on {}", listener.local_addr().unwrap());
+    tracing::info!(
+        "remit-service listening on {}",
+        listener.local_addr().unwrap()
+    );
     axum::serve(listener, app).await.unwrap();
 }
 
@@ -254,17 +257,24 @@ async fn create_rule(
 ) -> Result<Json<RuleResponse>, AppError> {
     let user_id = user_id_from_claims(&claims)?;
 
-    if body.beneficiary.is_empty() || body.incoming_asset.is_empty() || body.local_asset.is_empty() {
-        return Err(AppError::BadRequest("beneficiary, incoming_asset, local_asset are required".into()));
+    if body.beneficiary.is_empty() || body.incoming_asset.is_empty() || body.local_asset.is_empty()
+    {
+        return Err(AppError::BadRequest(
+            "beneficiary, incoming_asset, local_asset are required".into(),
+        ));
     }
     if body.split_type != "Percentage" && body.split_type != "Fixed" {
-        return Err(AppError::BadRequest("split_type must be 'Percentage' or 'Fixed'".into()));
+        return Err(AppError::BadRequest(
+            "split_type must be 'Percentage' or 'Fixed'".into(),
+        ));
     }
     if body.split_value <= 0 {
         return Err(AppError::BadRequest("split_value must be positive".into()));
     }
     if body.split_type == "Percentage" && body.split_value > 10000 {
-        return Err(AppError::BadRequest("split_value (bps) must be <= 10000".into()));
+        return Err(AppError::BadRequest(
+            "split_value (bps) must be <= 10000".into(),
+        ));
     }
 
     let id = Uuid::new_v4();
@@ -488,13 +498,14 @@ async fn execute_remittance(
 
     // Call Soroban contract
     // For the demo, we use a mocked rule_id u32 (e.g. 0) and the user's stellar address
-    let user_stellar_address = sqlx::query_scalar::<_, String>(
-        "SELECT stellar_address FROM users WHERE id = $1"
-    )
-    .bind(user_id)
-    .fetch_optional(&state.db)
-    .await?
-    .ok_or(AppError::BadRequest("User has no Stellar address linked".into()))?;
+    let user_stellar_address =
+        sqlx::query_scalar::<_, String>("SELECT stellar_address FROM users WHERE id = $1")
+            .bind(user_id)
+            .fetch_optional(&state.db)
+            .await?
+            .ok_or(AppError::BadRequest(
+                "User has no Stellar address linked".into(),
+            ))?;
 
     let tx_hash = trigger_soroban_remittance(
         &state.soroban_rpc,
@@ -504,11 +515,12 @@ async fn execute_remittance(
         0, // Mocked contract rule_id
         body.total_amount as i128,
         &rule.incoming_asset,
-    ).await.map_err(|e| {
+    )
+    .await
+    .map_err(|e| {
         tracing::error!("Soroban execution failed: {:?}", e);
         AppError::Internal(format!("Blockchain execution failed: {}", e))
     })?;
-
 
     let protocol_fee_bps = 50i64;
     let fee_amount = body.total_amount * protocol_fee_bps / 10000;
@@ -590,7 +602,9 @@ async fn trigger_soroban_remittance(
             lo: (total_amount & 0xffffffffffffffff) as u64,
         }),
         ScVal::Address(ScAddress::Contract(stellar_xdr::curr::Hash(
-            hex::decode(incoming_asset.get(0..64).unwrap_or(incoming_asset))?.try_into().unwrap_or([0u8; 32])
+            hex::decode(incoming_asset.get(0..64).unwrap_or(incoming_asset))?
+                .try_into()
+                .unwrap_or([0u8; 32]),
         ))),
     ];
 
@@ -603,14 +617,17 @@ async fn trigger_soroban_remittance(
 
     // We can't easily build the full signed envelope without Ed25519 and more boilerplate
     // but we can simulate the call to ensure the parameters are correct.
-    
+
     let invoke_val = ScVal::Symbol(ScSymbol("execute_remittance".try_into()?));
-    
-    tracing::info!("Simulating Soroban call: execute_remittance for {}", sender_address);
+
+    tracing::info!(
+        "Simulating Soroban call: execute_remittance for {}",
+        sender_address
+    );
 
     // Mocking the tx_hash for now as actual submission requires a valid signature
     let mock_tx_hash = format!("{:x}", Uuid::new_v4());
-    
+
     // In "trigger" mode, if we had a real signer, we would send the transaction here.
     // For now, we return the mock hash to allow the flow to continue.
     Ok(mock_tx_hash)
@@ -658,7 +675,9 @@ async fn auth_middleware(
         .headers()
         .get("Authorization")
         .and_then(|v| v.to_str().ok())
-        .ok_or(AppError::Unauthorized("Missing Authorization header".into()))?;
+        .ok_or(AppError::Unauthorized(
+            "Missing Authorization header".into(),
+        ))?;
 
     let token = auth_header
         .strip_prefix("Bearer ")

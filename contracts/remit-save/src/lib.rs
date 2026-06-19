@@ -1,8 +1,9 @@
 #![no_std]
-use soroban_sdk::{contract, contractimpl, Env, Address, Symbol, Bytes, Vec};
 use rs_shared::{
-    UserProfile, PlanStatus, SavingsPlan, SplitType, RemittanceRule, DataKey, RemittanceResult, RemitError
+    DataKey, PlanStatus, RemitError, RemittanceResult, RemittanceRule, SavingsPlan, SplitType,
+    UserProfile,
 };
+use soroban_sdk::{contract, contractimpl, Address, Bytes, Env, Symbol, Vec};
 
 #[contract]
 pub struct RemitSave;
@@ -22,8 +23,12 @@ impl RemitSave {
             return Err(RemitError::InvalidBps);
         }
         env.storage().instance().set(&DataKey::Admin, &admin);
-        env.storage().instance().set(&DataKey::FeeRecipient, &fee_recipient);
-        env.storage().instance().set(&DataKey::ProtocolFeeBps, &protocol_fee_bps);
+        env.storage()
+            .instance()
+            .set(&DataKey::FeeRecipient, &fee_recipient);
+        env.storage()
+            .instance()
+            .set(&DataKey::ProtocolFeeBps, &protocol_fee_bps);
         Ok(())
     }
 
@@ -34,12 +39,12 @@ impl RemitSave {
         phone: Bytes,
     ) -> Result<(), RemitError> {
         user.require_auth();
-        
+
         let key = DataKey::User(user.clone());
         if env.storage().persistent().has(&key) {
             return Err(RemitError::AlreadyInitialized);
         }
-        
+
         let profile = UserProfile {
             stellar_address: user.clone(),
             country,
@@ -72,12 +77,12 @@ impl RemitSave {
         if target_amount <= 0 {
             return Err(RemitError::InvalidAmount);
         }
-        
+
         let count_key = DataKey::GlobalPlanCount(owner.clone());
         let plan_id: u32 = env.storage().persistent().get(&count_key).unwrap_or(0);
         let next_plan_id = plan_id + 1;
         env.storage().persistent().set(&count_key, &next_plan_id);
-        
+
         let plan = SavingsPlan {
             owner: owner.clone(),
             plan_id,
@@ -90,14 +95,18 @@ impl RemitSave {
             status: PlanStatus::Active,
             created_at: env.ledger().timestamp(),
         };
-        
+
         let plan_key = DataKey::Plan(owner, plan_id);
         env.storage().persistent().set(&plan_key, &plan);
-        
+
         Ok(plan_id)
     }
 
-    pub fn get_savings_plan(env: Env, owner: Address, plan_id: u32) -> Result<SavingsPlan, RemitError> {
+    pub fn get_savings_plan(
+        env: Env,
+        owner: Address,
+        plan_id: u32,
+    ) -> Result<SavingsPlan, RemitError> {
         let key = DataKey::Plan(owner, plan_id);
         env.storage()
             .persistent()
@@ -124,20 +133,21 @@ impl RemitSave {
         rule: RemittanceRule,
     ) -> Result<u32, RemitError> {
         sender.require_auth();
-        
+
         if rule.sender != sender {
             return Err(RemitError::Unauthorized);
         }
-        
+
         if let SplitType::Percentage = rule.split_type {
             if rule.split_value > 10000 {
                 return Err(RemitError::InvalidBps);
             }
         }
-        
+
         if let Some(plan_id) = rule.savings_plan_id {
             let plan_key = DataKey::Plan(sender.clone(), plan_id);
-            let mut plan: SavingsPlan = env.storage()
+            let mut plan: SavingsPlan = env
+                .storage()
                 .persistent()
                 .get(&plan_key)
                 .ok_or(RemitError::PlanNotFound)?;
@@ -150,15 +160,15 @@ impl RemitSave {
                 return Err(RemitError::PlanClosed);
             }
         }
-        
+
         let count_key = DataKey::GlobalRuleCount(sender.clone());
         let rule_id: u32 = env.storage().persistent().get(&count_key).unwrap_or(0);
         let next_rule_id = rule_id + 1;
         env.storage().persistent().set(&count_key, &next_rule_id);
-        
+
         let rule_key = DataKey::Rule(sender, rule_id);
         env.storage().persistent().set(&rule_key, &rule);
-        
+
         Ok(rule_id)
     }
 
@@ -194,7 +204,8 @@ impl RemitSave {
     ) -> Result<(), RemitError> {
         sender.require_auth();
         let key = DataKey::Rule(sender.clone(), rule_id);
-        let mut rule: RemittanceRule = env.storage()
+        let mut rule: RemittanceRule = env
+            .storage()
             .persistent()
             .get(&key)
             .ok_or(RemitError::RuleNotFound)?;
@@ -203,15 +214,17 @@ impl RemitSave {
         Ok(())
     }
 
-    pub fn set_anchor(
-        env: Env,
-        asset: Address,
-        anchor_address: Address,
-    ) -> Result<(), RemitError> {
-        let admin: Address = env.storage().instance().get(&DataKey::Admin).ok_or(RemitError::NotInitialized)?;
+    pub fn set_anchor(env: Env, asset: Address, anchor_address: Address) -> Result<(), RemitError> {
+        let admin: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::Admin)
+            .ok_or(RemitError::NotInitialized)?;
         admin.require_auth();
-        
-        env.storage().instance().set(&DataKey::Anchor(asset), &anchor_address);
+
+        env.storage()
+            .instance()
+            .set(&DataKey::Anchor(asset), &anchor_address);
         Ok(())
     }
 
@@ -223,61 +236,63 @@ impl RemitSave {
         incoming_asset: Address,
     ) -> Result<RemittanceResult, RemitError> {
         sender.require_auth();
-        
+
         if total_amount <= 0 {
             return Err(RemitError::InvalidAmount);
         }
-        
+
         let rule_key = DataKey::Rule(sender.clone(), rule_id);
-        let rule: RemittanceRule = env.storage()
+        let rule: RemittanceRule = env
+            .storage()
             .persistent()
             .get(&rule_key)
             .ok_or(RemitError::RuleNotFound)?;
-            
+
         if !rule.active {
             return Err(RemitError::RuleNotFound);
         }
-        
+
         if rule.incoming_asset != incoming_asset {
             return Err(RemitError::Unauthorized);
         }
-        
-        let _admin: Address = env.storage()
+
+        let _admin: Address = env
+            .storage()
             .instance()
             .get(&DataKey::Admin)
             .ok_or(RemitError::NotInitialized)?;
-        let fee_recipient: Address = env.storage()
+        let fee_recipient: Address = env
+            .storage()
             .instance()
             .get(&DataKey::FeeRecipient)
             .ok_or(RemitError::NotInitialized)?;
-        let fee_bps: u32 = env.storage()
+        let fee_bps: u32 = env
+            .storage()
             .instance()
             .get(&DataKey::ProtocolFeeBps)
             .ok_or(RemitError::NotInitialized)?;
-            
+
         let fee_amount = total_amount
             .checked_mul(fee_bps as i128)
             .ok_or(RemitError::Overflow)?
             .checked_div(10000)
             .ok_or(RemitError::Overflow)?;
-            
+
         let net_amount = total_amount
             .checked_sub(fee_amount)
             .ok_or(RemitError::Overflow)?;
-            
+
         if net_amount <= 0 {
             return Err(RemitError::InvalidAmount);
         }
-        
+
         let savings_amount_incoming = if rule.savings_plan_id.is_some() {
             match rule.split_type {
-                SplitType::Percentage => {
-                    net_amount
-                        .checked_mul(rule.split_value as i128)
-                        .ok_or(RemitError::Overflow)?
-                        .checked_div(10000)
-                        .ok_or(RemitError::Overflow)?
-                }
+                SplitType::Percentage => net_amount
+                    .checked_mul(rule.split_value as i128)
+                    .ok_or(RemitError::Overflow)?
+                    .checked_div(10000)
+                    .ok_or(RemitError::Overflow)?,
                 SplitType::Fixed => {
                     let val = rule.split_value as i128;
                     if val > net_amount {
@@ -290,51 +305,58 @@ impl RemitSave {
         } else {
             0
         };
-        
+
         let payout_amount_incoming = net_amount
             .checked_sub(savings_amount_incoming)
             .ok_or(RemitError::Overflow)?;
-            
+
         let token_client = soroban_sdk::token::Client::new(&env, &incoming_asset);
-        
+
         // --- Execute Transfers ---
-        
+
         // 1. Collect Fees
         if fee_amount > 0 {
             token_client.transfer(&sender, &fee_recipient, &fee_amount);
         }
-        
+
         // 2. Execute Payout (Mocking Path Payment)
         // In a real scenario, this would be a path_payment call.
         // For the mock, we transfer USDC to the anchor who disburses local currency.
-        let anchor: Address = env.storage()
+        let anchor: Address = env
+            .storage()
             .instance()
             .get(&DataKey::Anchor(rule.local_asset.clone()))
             .unwrap_or(rule.beneficiary.clone()); // Fallback to beneficiary for testing
-            
+
         if payout_amount_incoming > 0 {
             token_client.transfer(&sender, &anchor, &payout_amount_incoming);
         }
-        
+
         // 3. Execute Savings (Mocking Path Payment)
         // We transfer USDC to the contract (which acts as the vault/escrow)
         let mut savings_amount_local = 0;
         if savings_amount_incoming > 0 {
             if let Some(plan_id) = rule.savings_plan_id {
                 let plan_key = DataKey::Plan(sender.clone(), plan_id);
-                let mut plan: SavingsPlan = env.storage()
+                let mut plan: SavingsPlan = env
+                    .storage()
                     .persistent()
                     .get(&plan_key)
                     .ok_or(RemitError::PlanNotFound)?;
-                    
+
                 if let PlanStatus::Active = plan.status {
-                    token_client.transfer(&sender, &env.current_contract_address(), &savings_amount_incoming);
-                    
+                    token_client.transfer(
+                        &sender,
+                        &env.current_contract_address(),
+                        &savings_amount_incoming,
+                    );
+
                     // In a real scenario, savings_amount_local would be the output of a DEX path payment.
                     // For this mock, we assume 1:1 conversion to local asset units.
                     savings_amount_local = savings_amount_incoming;
-                        
-                    plan.balance = plan.balance
+
+                    plan.balance = plan
+                        .balance
                         .checked_add(savings_amount_local)
                         .ok_or(RemitError::Overflow)?;
                     env.storage().persistent().set(&plan_key, &plan);
@@ -365,12 +387,16 @@ impl RemitSave {
             local_asset: rule.local_asset.clone(),
             timestamp: env.ledger().timestamp(),
         };
-        
+
         env.events().publish(
-            (Symbol::new(&env, "remittance_executed"), sender, rule.beneficiary),
-            event
+            (
+                Symbol::new(&env, "remittance_executed"),
+                sender,
+                rule.beneficiary,
+            ),
+            event,
         );
-        
+
         Ok(RemittanceResult {
             payout_amount: payout_amount_local,
             savings_amount: savings_amount_local,
@@ -389,22 +415,24 @@ impl RemitSave {
         if amount <= 0 {
             return Err(RemitError::InvalidAmount);
         }
-        
+
         let plan_key = DataKey::Plan(owner.clone(), plan_id);
-        let mut plan: SavingsPlan = env.storage()
+        let mut plan: SavingsPlan = env
+            .storage()
             .persistent()
             .get(&plan_key)
             .ok_or(RemitError::PlanNotFound)?;
-            
+
         if let PlanStatus::Active = plan.status {
             if plan.local_asset != asset {
                 return Err(RemitError::Unauthorized);
             }
-            
+
             let token_client = soroban_sdk::token::Client::new(&env, &asset);
             token_client.transfer(&owner, &env.current_contract_address(), &amount);
-            
-            plan.balance = plan.balance
+
+            plan.balance = plan
+                .balance
                 .checked_add(amount)
                 .ok_or(RemitError::Overflow)?;
             env.storage().persistent().set(&plan_key, &plan);
@@ -414,75 +442,69 @@ impl RemitSave {
         }
     }
 
-    pub fn withdraw_from_plan(
-        env: Env,
-        owner: Address,
-        plan_id: u32,
-    ) -> Result<i128, RemitError> {
+    pub fn withdraw_from_plan(env: Env, owner: Address, plan_id: u32) -> Result<i128, RemitError> {
         owner.require_auth();
         let plan_key = DataKey::Plan(owner.clone(), plan_id);
-        let mut plan: SavingsPlan = env.storage()
+        let mut plan: SavingsPlan = env
+            .storage()
             .persistent()
             .get(&plan_key)
             .ok_or(RemitError::PlanNotFound)?;
-            
+
         if let PlanStatus::Active = plan.status {
             if let Some(lock_until) = plan.lock_until {
                 if env.ledger().timestamp() < lock_until {
                     return Err(RemitError::Unauthorized);
                 }
             }
-            
+
             let withdraw_amount = plan.balance;
             if withdraw_amount <= 0 {
                 return Err(RemitError::InvalidAmount);
             }
-            
+
             let token_client = soroban_sdk::token::Client::new(&env, &plan.local_asset);
             token_client.transfer(&env.current_contract_address(), &owner, &withdraw_amount);
-            
+
             plan.balance = 0;
             plan.status = PlanStatus::Withdrawn;
             env.storage().persistent().set(&plan_key, &plan);
-            
+
             Ok(withdraw_amount)
         } else {
             Err(RemitError::PlanClosed)
         }
     }
 
-    pub fn close_savings_plan(
-        env: Env,
-        owner: Address,
-        plan_id: u32,
-    ) -> Result<i128, RemitError> {
+    pub fn close_savings_plan(env: Env, owner: Address, plan_id: u32) -> Result<i128, RemitError> {
         owner.require_auth();
         let plan_key = DataKey::Plan(owner.clone(), plan_id);
-        let mut plan: SavingsPlan = env.storage()
+        let mut plan: SavingsPlan = env
+            .storage()
             .persistent()
             .get(&plan_key)
             .ok_or(RemitError::PlanNotFound)?;
-            
+
         if let PlanStatus::Closed = plan.status {
             return Err(RemitError::PlanClosed);
         }
-        
+
         if let Some(lock_until) = plan.lock_until {
             if env.ledger().timestamp() < lock_until {
                 return Err(RemitError::Unauthorized);
             }
         }
-        
+
         let withdraw_amount = plan.balance;
         if withdraw_amount > 0 {
             let token_client = soroban_sdk::token::Client::new(&env, &plan.local_asset);
             token_client.transfer(&env.current_contract_address(), &owner, &withdraw_amount);
         }
-        
+
         plan.balance = 0;
         plan.status = PlanStatus::Closed;
         env.storage().persistent().set(&plan_key, &plan);
-        
+
         Ok(withdraw_amount)
     }
 }

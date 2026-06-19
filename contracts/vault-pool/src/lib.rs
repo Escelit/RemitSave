@@ -1,8 +1,6 @@
 #![no_std]
+use rs_shared::{DataKey, VaultError, VaultPool, YieldSource, SHARE_PRICE_DENOM, YEAR_SECS};
 use soroban_sdk::{contract, contractimpl, token, Address, Env, Symbol};
-use rs_shared::{
-    DataKey, VaultError, VaultPool, YieldSource, SHARE_PRICE_DENOM, YEAR_SECS,
-};
 
 #[contract]
 pub struct VaultPoolContract;
@@ -24,9 +22,7 @@ impl VaultPoolContract {
 
         let count_key = DataKey::GlobalPoolCount;
         let pool_id: u32 = env.storage().instance().get(&count_key).unwrap_or(0);
-        env.storage()
-            .instance()
-            .set(&count_key, &(pool_id + 1));
+        env.storage().instance().set(&count_key, &(pool_id + 1));
 
         let now = env.ledger().timestamp();
         let pool = VaultPool {
@@ -43,7 +39,9 @@ impl VaultPoolContract {
             created_at: now,
         };
 
-        env.storage().persistent().set(&DataKey::Pool(pool_id), &pool);
+        env.storage()
+            .persistent()
+            .set(&DataKey::Pool(pool_id), &pool);
         env.storage()
             .persistent()
             .set(&DataKey::PoolLastUpdated(pool_id), &now);
@@ -97,9 +95,10 @@ impl VaultPoolContract {
 
         let user_key = DataKey::PoolUserBalance(user.clone(), pool_id);
         let existing: i128 = env.storage().persistent().get(&user_key).unwrap_or(0);
-        env.storage()
-            .persistent()
-            .set(&user_key, &existing.checked_add(shares).ok_or(VaultError::Overflow)?);
+        env.storage().persistent().set(
+            &user_key,
+            &existing.checked_add(shares).ok_or(VaultError::Overflow)?,
+        );
 
         let lock_key = DataKey::PoolUserDepositTime(user, pool_id);
         env.storage()
@@ -251,12 +250,7 @@ impl VaultPoolContract {
             .unwrap_or(0)
     }
 
-    pub fn set_apy(
-        env: Env,
-        pool_id: u32,
-        admin: Address,
-        new_apy: u32,
-    ) -> Result<(), VaultError> {
+    pub fn set_apy(env: Env, pool_id: u32, admin: Address, new_apy: u32) -> Result<(), VaultError> {
         admin.require_auth();
         if new_apy > 10000 {
             return Err(VaultError::InvalidBps);

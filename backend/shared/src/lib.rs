@@ -1,10 +1,10 @@
-pub mod models;
-pub mod error;
 pub mod db;
+pub mod error;
+pub mod models;
 
 #[cfg(test)]
 mod tests;
 
-pub use models::*;
-pub use error::*;
 pub use db::*;
+pub use error::*;
+pub use models::*;

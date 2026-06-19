@@ -1,6 +1,6 @@
 #[cfg(test)]
 mod tests {
-    use backend_shared::{RegisterRequest, JwtClaims};
+    use backend_shared::{JwtClaims, RegisterRequest};
     use uuid::Uuid;
 
     #[test]
@@ -83,7 +83,7 @@ mod tests {
         let user_id = Uuid::new_v4();
         let token = crate::jwt::issue_token(user_id, "secret").unwrap();
 
-        use jsonwebtoken::{decode, DecodingKey, Validation, Algorithm};
+        use jsonwebtoken::{decode, Algorithm, DecodingKey, Validation};
         let token_data = decode::<JwtClaims>(
             &token,
             &DecodingKey::from_secret("secret".as_bytes()),

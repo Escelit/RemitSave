@@ -8,7 +8,14 @@ use soroban_sdk::{
     Address, Env, Symbol,
 };
 
-fn setup_pool() -> (Env, VaultPoolContractClient<'static>, Address, Address, u32, Address) {
+fn setup_pool() -> (
+    Env,
+    VaultPoolContractClient<'static>,
+    Address,
+    Address,
+    u32,
+    Address,
+) {
     let env = Env::default();
     env.mock_all_auths();
 
@@ -19,8 +26,7 @@ fn setup_pool() -> (Env, VaultPoolContractClient<'static>, Address, Address, u32
     let user = Address::generate(&env);
 
     let token_admin = Address::generate(&env);
-    let token_contract =
-        env.register_stellar_asset_contract_v2(token_admin.clone());
+    let token_contract = env.register_stellar_asset_contract_v2(token_admin.clone());
     let token_address = token_contract.address();
     let token_admin_client = StellarAssetClient::new(&env, &token_address);
     token_admin_client.mint(&user, &1_000_000);
@@ -48,8 +54,7 @@ fn setup_locked_pool() -> (Env, VaultPoolContractClient<'static>, Address, Addre
     let user = Address::generate(&env);
 
     let token_admin = Address::generate(&env);
-    let token_contract =
-        env.register_stellar_asset_contract_v2(token_admin.clone());
+    let token_contract = env.register_stellar_asset_contract_v2(token_admin.clone());
     let token_address = token_contract.address();
     let token_admin_client = StellarAssetClient::new(&env, &token_address);
     token_admin_client.mint(&user, &1_000_000);

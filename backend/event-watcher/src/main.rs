@@ -1,11 +1,11 @@
-use chrono::Utc;
-use sqlx::PgPool;
-use std::time::Duration;
-use tracing_subscriber::EnvFilter;
-use serde::{Deserialize, Serialize};
-use stellar_xdr::curr::{ScVal, Limits, ReadXdr, ScAddress};
 use base64::{engine::general_purpose, Engine as _};
 use bigdecimal::BigDecimal;
+use chrono::Utc;
+use serde::{Deserialize, Serialize};
+use sqlx::PgPool;
+use std::time::Duration;
+use stellar_xdr::curr::{Limits, ReadXdr, ScAddress, ScVal};
+use tracing_subscriber::EnvFilter;
 
 #[derive(Debug, Serialize)]
 struct JsonRpcRequest {
@@ -66,8 +66,7 @@ struct RemittanceExecuted {
 async fn main() {
     tracing_subscriber::fmt()
         .with_env_filter(
-            EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| "event_watcher=info".into()),
+            EnvFilter::try_from_default_env().unwrap_or_else(|_| "event_watcher=info".into()),
         )
         .init();
 
@@ -126,8 +125,12 @@ async fn poll_events(
             method: "getLatestLedger".into(),
             params: serde_json::json!({}),
         };
-        let resp: JsonRpcResponse<serde_json::Value> = client.post(rpc_url).json(&req).send().await?.json().await?;
-        let ledger = resp.result.and_then(|v| v.get("sequence").and_then(|s| s.as_u64())).unwrap_or(1) as u32;
+        let resp: JsonRpcResponse<serde_json::Value> =
+            client.post(rpc_url).json(&req).send().await?.json().await?;
+        let ledger = resp
+            .result
+            .and_then(|v| v.get("sequence").and_then(|s| s.as_u64()))
+            .unwrap_or(1) as u32;
         ledger.saturating_sub(100) // Start from 100 ledgers ago
     } else {
         start_ledger
@@ -149,27 +152,33 @@ async fn poll_events(
         }),
     };
 
-    let resp: JsonRpcResponse<GetEventsResponse> = client.post(rpc_url).json(&req).send().await?.json().await?;
-    
+    let resp: JsonRpcResponse<GetEventsResponse> =
+        client.post(rpc_url).json(&req).send().await?.json().await?;
+
     if let Some(err) = resp.error {
         return Err(format!("RPC Error: {:?}", err).into());
     }
 
     let result = resp.result.ok_or("No result in getEvents response")?;
-    let latest_ledger = result.latest_ledger.parse::<u32>().unwrap_or(current_ledger);
+    let latest_ledger = result
+        .latest_ledger
+        .parse::<u32>()
+        .unwrap_or(current_ledger);
 
     for event in result.events {
         // Topic 0 should be "remittance_executed"
-        if event.topic.is_empty() { continue; }
-        
+        if event.topic.is_empty() {
+            continue;
+        }
+
         let topic0_xdr = general_purpose::STANDARD.decode(&event.topic[0])?;
         let topic0 = ScVal::from_xdr(&topic0_xdr, Limits::none())?;
-        
+
         match topic0 {
             ScVal::Symbol(s) if s.to_string() == "remittance_executed" => {
                 let value_xdr = general_purpose::STANDARD.decode(&event.value.xdr)?;
                 let value = ScVal::from_xdr(&value_xdr, Limits::none())?;
-                
+
                 if let Some(remittance) = parse_remittance_event(value) {
                     tracing::info!("Found RemittanceExecuted event: {:?}", remittance);
                     save_event(pool, remittance, &event.id).await?;
@@ -213,11 +222,18 @@ fn parse_remittance_event(val: ScVal) -> Option<RemittanceExecuted> {
                 }
             }
         }
-        
+
         Some(RemittanceExecuted {
-            remittance_id, sender, beneficiary, total_amount,
-            payout_amount, savings_amount, fee_amount,
-            incoming_asset, local_asset, timestamp
+            remittance_id,
+            sender,
+            beneficiary,
+            total_amount,
+            payout_amount,
+            savings_amount,
+            fee_amount,
+            incoming_asset,
+            local_asset,
+            timestamp,
         })
     } else {
         None
@@ -225,11 +241,19 @@ fn parse_remittance_event(val: ScVal) -> Option<RemittanceExecuted> {
 }
 
 fn parse_u32(val: &ScVal) -> Option<u32> {
-    if let ScVal::U32(v) = val { Some(*v) } else { None }
+    if let ScVal::U32(v) = val {
+        Some(*v)
+    } else {
+        None
+    }
 }
 
 fn parse_u64(val: &ScVal) -> Option<u64> {
-    if let ScVal::U64(v) = val { Some(*v) } else { None }
+    if let ScVal::U64(v) = val {
+        Some(*v)
+    } else {
+        None
+    }
 }
 
 fn parse_i128(val: &ScVal) -> Option<i128> {
@@ -259,18 +283,21 @@ fn parse_address(val: &ScVal) -> Option<String> {
     }
 }
 
-async fn save_event(pool: &PgPool, ev: RemittanceExecuted, tx_hash: &str) -> Result<(), Box<dyn std::error::Error>> {
+async fn save_event(
+    pool: &PgPool,
+    ev: RemittanceExecuted,
+    tx_hash: &str,
+) -> Result<(), Box<dyn std::error::Error>> {
     // We need to find the user_id from the sender address
     // The sender address in the event is a Stellar address (e.g. G...)
     // Our users table has a stellar_address column.
-    
-    let user_id = sqlx::query_scalar::<_, uuid::Uuid>(
-        "SELECT id FROM users WHERE stellar_address = $1"
-    )
-    .bind(&ev.sender)
-    .fetch_optional(pool)
-    .await?;
-    
+
+    let user_id =
+        sqlx::query_scalar::<_, uuid::Uuid>("SELECT id FROM users WHERE stellar_address = $1")
+            .bind(&ev.sender)
+            .fetch_optional(pool)
+            .await?;
+
     let user_id = match user_id {
         Some(id) => id,
         None => {
@@ -290,7 +317,7 @@ async fn save_event(pool: &PgPool, ev: RemittanceExecuted, tx_hash: &str) -> Res
                                         status, tx_hash, created_at)
         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 'completed', $11, $12)
         ON CONFLICT (id) DO NOTHING
-        "#
+        "#,
     )
     .bind(uuid::Uuid::new_v4())
     .bind(ev.remittance_id as i32)
