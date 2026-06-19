@@ -1,12 +1,41 @@
+# Rust
 target/
 backend/target/
 contracts/target/
+**/*.rs.bk
+
+# Soroban
 contracts/remit-save/test_snapshots/
-plan.md
+contracts/vault-pool/test_snapshots/
+
+# Node / JS
 node_modules/
 scripts/node_modules/
-scripts/.deployment.json
+*.js.map
+*.d.ts
+
+# Environment & secrets
+.env
 .env.deployment
-backend/migrations/*.swp
+.env.*.local
+scripts/.deployment.json
+
+# Editor & IDE
 *.swp
-Plan.md
+*.swo
+*~
+.vscode/
+.idea/
+*.iml
+.vs/
+
+# OS
+.DS_Store
+Thumbs.db
+ehthumbs.db
+
+# Docker
+docker-data/
+
+# Logs
+*.log

@@ -1,0 +1,40 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  contracts:
+    name: Contracts (Soroban)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+          components: clippy, rustfmt
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo fmt --check --manifest-path contracts/Cargo.toml
+      - run: cargo clippy --manifest-path contracts/Cargo.toml -- -D warnings
+      - run: cargo build --target wasm32-unknown-unknown --release --manifest-path contracts/Cargo.toml
+      - run: cargo test --manifest-path contracts/Cargo.toml
+
+  backend:
+    name: Backend (Rust / Axum)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo fmt --check --manifest-path backend/Cargo.toml
+      - run: cargo clippy --manifest-path backend/Cargo.toml -- -D warnings
+      - run: cargo build --manifest-path backend/Cargo.toml
+      - run: cargo test --manifest-path backend/Cargo.toml

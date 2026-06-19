@@ -1,5 +1,12 @@
 # RemitSave Africa
 
+[![CI](https://github.com/promise-ogazi/RemitSave/actions/workflows/ci.yml/badge.svg)](https://github.com/promise-ogazi/RemitSave/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![Rust](https://img.shields.io/badge/Rust-1.78%2B-dea584)](https://rustup.rs)
+[![Node](https://img.shields.io/badge/Node-20%2B-339933)](https://nodejs.org)
+[![Soroban](https://img.shields.io/badge/Soroban-latest-04b5e5)](https://soroban.stellar.org)
+[![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen)](.github/PULL_REQUEST_TEMPLATE.md)
+
 **Cross-border remittances + automated savings, powered by Stellar & Soroban**
 
 RemitSave Africa is an end-to-end platform that lets the African diaspora send money home while simultaneously building savings — automatically. Every remittance can be split on-chain: a percentage goes directly to the beneficiary's mobile money, and the remainder is deposited into yield-bearing savings vaults (fixed deposits, T-bill pools, or goal-based plans).
@@ -1088,22 +1095,11 @@ Integrated with:
 
 ## Development Setup
 
-### Prerequisites
+See [CONTRIBUTING.md](CONTRIBUTING.md) for a full guide. Quick start:
 
 ```bash
-# Install Rust and Soroban CLI
-curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
-cargo install soroban-cli
-
-# Install Node.js 20+
-nvm install 20 && nvm use 20
-
-# Install Docker & kubectl
-sudo apt-get install docker.io
-curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
-
-# Install Stellar Quickstart (for local devnet)
-docker run --rm -it -p 8000:8000 stellar/quickstart:soroban-dev@sha256:... --local
+bash scripts/bootstrap.sh          # one-command setup
+make test                          # run all tests
 ```
 
 ### Repository Structure
@@ -1365,13 +1361,15 @@ cd scripts && k6 run load-test.js
 
 We welcome contributions! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for detailed guidelines.
 
+All contributors must adhere to our [Code of Conduct](CODE_OF_CONDUCT.md). By participating, you agree to uphold this code. Report unacceptable behavior to ogazipromise@gmail.com.
+
 ### Quick Start
 
 1. Fork the repository
 2. Create a feature branch (`git checkout -b feat/my-feature`)
 3. Commit your changes (`git commit -m 'feat: add my feature'`)
 4. Push to the branch (`git push origin feat/my-feature`)
-5. Open a Pull Request
+5. Open a Pull Request — see the [PR template](.github/PULL_REQUEST_TEMPLATE.md)
 
 ### Code Standards
 
@@ -1384,11 +1382,15 @@ We welcome contributions! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for deta
 | Branch naming | `feat/`, `fix/`, `chore/`, `docs/` prefixes |
 | PR size | < 400 lines changed unless discussed |
 
+### Security Vulnerabilities
+
+Please report security issues privately to ogazipromise@gmail.com. See [SECURITY.md](SECURITY.md) for details.
+
 ---
 
 ## License
 
-This project is licensed under the **Apache License 2.0** — see [LICENSE](LICENSE) for details.
+This project is licensed under the **MIT License** — see [LICENSE](LICENSE) for details.
 
 ---
 
