@@ -20,10 +20,10 @@ jobs:
           targets: wasm32-unknown-unknown
           components: clippy, rustfmt
       - uses: Swatinem/rust-cache@v2
-      - run: cargo fmt --check --manifest-path contracts/Cargo.toml
-      - run: cargo clippy --manifest-path contracts/Cargo.toml -- -D warnings
+      - run: cargo fmt --check --all --manifest-path contracts/Cargo.toml
+      - run: cargo clippy --all-targets --manifest-path contracts/Cargo.toml -- -D warnings
       - run: cargo build --target wasm32-unknown-unknown --release --manifest-path contracts/Cargo.toml
-      - run: cargo test --manifest-path contracts/Cargo.toml
+      - run: cargo test --all --manifest-path contracts/Cargo.toml
 
   backend:
     name: Backend (Rust / Axum)
@@ -34,7 +34,7 @@ jobs:
         with:
           components: clippy, rustfmt
       - uses: Swatinem/rust-cache@v2
-      - run: cargo fmt --check --manifest-path backend/Cargo.toml
-      - run: cargo clippy --manifest-path backend/Cargo.toml -- -D warnings
+      - run: cargo fmt --check --all --manifest-path backend/Cargo.toml
+      - run: cargo clippy --all-targets --manifest-path backend/Cargo.toml -- -D warnings
       - run: cargo build --manifest-path backend/Cargo.toml
-      - run: cargo test --manifest-path backend/Cargo.toml
+      - run: cargo test --all --manifest-path backend/Cargo.toml
