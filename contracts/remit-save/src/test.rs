@@ -397,3 +397,89 @@ fn test_emergency_pause_mechanism() {
     let result = client.execute_remittance(&sender, &rule_id, &1000, &token_address);
     assert_eq!(result.fee_amount, 5);
 }
+
+#[test]
+fn test_partial_plan_withdrawal() {
+    let (env, client, admin, fee_recipient, sender, _, token_address) = setup_test();
+    client.initialize(&admin, &fee_recipient, &0);
+
+    client.register_user(
+        &sender,
+        &Symbol::new(&env, "NG"),
+        &Bytes::from_slice(&env, b"+234"),
+    );
+
+    let plan_id = client.create_savings_plan(
+        &sender,
+        &Symbol::new(&env, "Emergency"),
+        &1000,
+        &token_address,
+        &None,
+    );
+
+    // Deposit 500 units
+    client.deposit_to_plan(&sender, &plan_id, &500, &token_address);
+    let plan = client.get_savings_plan(&sender, &plan_id);
+    assert_eq!(plan.balance, 500);
+    assert_eq!(plan.status, PlanStatus::Active);
+
+    // Partial withdrawal of 200
+    let withdrawn = client.withdraw_amount_from_plan(&sender, &plan_id, &200);
+    assert_eq!(withdrawn, 200);
+
+    let plan_after = client.get_savings_plan(&sender, &plan_id);
+    assert_eq!(plan_after.balance, 300);
+    assert_eq!(plan_after.status, PlanStatus::Active);
+
+    // Exceeding balance fails
+    let err_res = client.try_withdraw_amount_from_plan(&sender, &plan_id, &500);
+    assert!(err_res.is_err());
+
+    // Withdrawing remaining 300 sets status to Withdrawn
+    let withdrawn_final = client.withdraw_amount_from_plan(&sender, &plan_id, &300);
+    assert_eq!(withdrawn_final, 300);
+
+    let plan_withdrawn = client.get_savings_plan(&sender, &plan_id);
+    assert_eq!(plan_withdrawn.balance, 0);
+    assert_eq!(plan_withdrawn.status, PlanStatus::Withdrawn);
+}
+
+#[test]
+fn test_goal_completion_transition() {
+    let (env, client, admin, fee_recipient, sender, _, token_address) = setup_test();
+    client.initialize(&admin, &fee_recipient, &0);
+
+    client.register_user(
+        &sender,
+        &Symbol::new(&env, "NG"),
+        &Bytes::from_slice(&env, b"+234"),
+    );
+
+    let plan_id = client.create_savings_plan(
+        &sender,
+        &Symbol::new(&env, "Laptop"),
+        &500,
+        &token_address,
+        &None,
+    );
+
+    // Deposit 300 (< 500 target)
+    client.deposit_to_plan(&sender, &plan_id, &300, &token_address);
+    let plan = client.get_savings_plan(&sender, &plan_id);
+    assert_eq!(plan.status, PlanStatus::Active);
+
+    // Deposit another 200 (hits 500 target)
+    client.deposit_to_plan(&sender, &plan_id, &200, &token_address);
+    let plan_completed = client.get_savings_plan(&sender, &plan_id);
+    assert_eq!(plan_completed.status, PlanStatus::Completed);
+    assert_eq!(plan_completed.balance, 500);
+
+    // Partial withdrawal from completed plan
+    let withdrawn = client.withdraw_amount_from_plan(&sender, &plan_id, &100);
+    assert_eq!(withdrawn, 100);
+
+    // Plan drops below target so becomes Active again
+    let plan_active = client.get_savings_plan(&sender, &plan_id);
+    assert_eq!(plan_active.status, PlanStatus::Active);
+    assert_eq!(plan_active.balance, 400);
+}

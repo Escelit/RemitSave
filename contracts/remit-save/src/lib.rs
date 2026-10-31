@@ -407,7 +407,7 @@ impl RemitSave {
                     .get(&plan_key)
                     .ok_or(RemitError::PlanNotFound)?;
 
-                if let PlanStatus::Active = plan.status {
+                if matches!(plan.status, PlanStatus::Active | PlanStatus::Completed) {
                     token_client.transfer(
                         &sender,
                         &env.current_contract_address(),
@@ -422,6 +422,9 @@ impl RemitSave {
                         .balance
                         .checked_add(savings_amount_local)
                         .ok_or(RemitError::Overflow)?;
+                    if plan.balance >= plan.target_amount {
+                        plan.status = PlanStatus::Completed;
+                    }
                     env.storage().persistent().set(&plan_key, &plan);
                 } else {
                     return Err(RemitError::PlanClosed);
@@ -489,7 +492,7 @@ impl RemitSave {
             .get(&plan_key)
             .ok_or(RemitError::PlanNotFound)?;
 
-        if let PlanStatus::Active = plan.status {
+        if matches!(plan.status, PlanStatus::Active | PlanStatus::Completed) {
             if plan.local_asset != asset {
                 return Err(RemitError::Unauthorized);
             }
@@ -501,6 +504,9 @@ impl RemitSave {
                 .balance
                 .checked_add(amount)
                 .ok_or(RemitError::Overflow)?;
+            if plan.balance >= plan.target_amount {
+                plan.status = PlanStatus::Completed;
+            }
             env.storage().persistent().set(&plan_key, &plan);
             Ok(())
         } else {
@@ -508,11 +514,21 @@ impl RemitSave {
         }
     }
 
-    pub fn withdraw_from_plan(env: Env, owner: Address, plan_id: u32) -> Result<i128, RemitError> {
+    pub fn withdraw_amount_from_plan(
+        env: Env,
+        owner: Address,
+        plan_id: u32,
+        amount: i128,
+    ) -> Result<i128, RemitError> {
         if Self::is_paused(env.clone()) {
             return Err(RemitError::ContractPaused);
         }
         owner.require_auth();
+
+        if amount <= 0 {
+            return Err(RemitError::InvalidAmount);
+        }
+
         let plan_key = DataKey::Plan(owner.clone(), plan_id);
         let mut plan: SavingsPlan = env
             .storage()
@@ -520,29 +536,47 @@ impl RemitSave {
             .get(&plan_key)
             .ok_or(RemitError::PlanNotFound)?;
 
-        if let PlanStatus::Active = plan.status {
-            if let Some(lock_until) = plan.lock_until {
-                if env.ledger().timestamp() < lock_until {
-                    return Err(RemitError::Unauthorized);
-                }
-            }
-
-            let withdraw_amount = plan.balance;
-            if withdraw_amount <= 0 {
-                return Err(RemitError::InvalidAmount);
-            }
-
-            let token_client = soroban_sdk::token::Client::new(&env, &plan.local_asset);
-            token_client.transfer(&env.current_contract_address(), &owner, &withdraw_amount);
-
-            plan.balance = 0;
-            plan.status = PlanStatus::Withdrawn;
-            env.storage().persistent().set(&plan_key, &plan);
-
-            Ok(withdraw_amount)
-        } else {
-            Err(RemitError::PlanClosed)
+        if !matches!(plan.status, PlanStatus::Active | PlanStatus::Completed) {
+            return Err(RemitError::PlanClosed);
         }
+
+        if let Some(lock_until) = plan.lock_until {
+            if env.ledger().timestamp() < lock_until {
+                return Err(RemitError::Unauthorized);
+            }
+        }
+
+        if amount > plan.balance {
+            return Err(RemitError::InvalidAmount);
+        }
+
+        let token_client = soroban_sdk::token::Client::new(&env, &plan.local_asset);
+        token_client.transfer(&env.current_contract_address(), &owner, &amount);
+
+        plan.balance = plan
+            .balance
+            .checked_sub(amount)
+            .ok_or(RemitError::Overflow)?;
+
+        if plan.balance == 0 {
+            plan.status = PlanStatus::Withdrawn;
+        } else if plan.balance < plan.target_amount && plan.status == PlanStatus::Completed {
+            plan.status = PlanStatus::Active;
+        }
+
+        env.storage().persistent().set(&plan_key, &plan);
+        Ok(amount)
+    }
+
+    pub fn withdraw_from_plan(env: Env, owner: Address, plan_id: u32) -> Result<i128, RemitError> {
+        let plan_key = DataKey::Plan(owner.clone(), plan_id);
+        let plan: SavingsPlan = env
+            .storage()
+            .persistent()
+            .get(&plan_key)
+            .ok_or(RemitError::PlanNotFound)?;
+
+        Self::withdraw_amount_from_plan(env, owner, plan_id, plan.balance)
     }
 
     pub fn close_savings_plan(env: Env, owner: Address, plan_id: u32) -> Result<i128, RemitError> {
