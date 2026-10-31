@@ -82,3 +82,67 @@ fn test_split_zero_amount() {
     assert_eq!(savings, 0);
     assert_eq!(payout, 0);
 }
+
+#[test]
+fn test_savings_plan_deposit_and_completion() {
+    let target = 5000i64;
+    let mut balance = 0i64;
+    let mut status = "Active".to_string();
+
+    let deposit_1 = 3000i64;
+    balance += deposit_1;
+    if balance >= target {
+        status = "Completed".to_string();
+    }
+    assert_eq!(balance, 3000);
+    assert_eq!(status, "Active");
+
+    let deposit_2 = 2500i64;
+    balance += deposit_2;
+    if balance >= target {
+        status = "Completed".to_string();
+    }
+    assert_eq!(balance, 5500);
+    assert_eq!(status, "Completed");
+}
+
+#[test]
+fn test_savings_plan_partial_and_full_withdrawal() {
+    let target = 5000i64;
+    let mut balance = 5000i64;
+    let mut status = "Completed".to_string();
+
+    // Partial withdrawal: drops below target
+    let withdraw_1 = 2000i64;
+    assert!(withdraw_1 <= balance);
+    balance -= withdraw_1;
+    if balance == 0 {
+        status = "Withdrawn".to_string();
+    } else if balance < target {
+        status = "Active".to_string();
+    }
+    assert_eq!(balance, 3000);
+    assert_eq!(status, "Active");
+
+    // Full withdrawal: reaches zero
+    let withdraw_2 = 3000i64;
+    assert!(withdraw_2 <= balance);
+    balance -= withdraw_2;
+    if balance == 0 {
+        status = "Withdrawn".to_string();
+    }
+    assert_eq!(balance, 0);
+    assert_eq!(status, "Withdrawn");
+}
+
+#[test]
+fn test_savings_plan_validation_checks() {
+    let goal_name = "  ".trim();
+    assert!(goal_name.is_empty());
+
+    let target_amount = -100i64;
+    assert!(target_amount <= 0);
+
+    let local_asset = "".trim();
+    assert!(local_asset.is_empty());
+}

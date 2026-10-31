@@ -156,6 +156,75 @@ impl From<RemittanceEventRow> for RemittanceEventResponse {
     }
 }
 
+#[derive(Debug, Serialize, Deserialize, sqlx::FromRow)]
+struct SavingsPlanRow {
+    id: Uuid,
+    user_id: Uuid,
+    onchain_plan_id: Option<i32>,
+    goal_name: String,
+    target_amount: BigDecimal,
+    current_balance: BigDecimal,
+    local_asset: String,
+    lock_until: Option<chrono::DateTime<chrono::Utc>>,
+    status: String,
+    created_at: chrono::DateTime<chrono::Utc>,
+    updated_at: chrono::DateTime<chrono::Utc>,
+}
+
+#[derive(Debug, Deserialize)]
+struct CreatePlanRequest {
+    goal_name: String,
+    target_amount: i64,
+    local_asset: String,
+    lock_until: Option<chrono::DateTime<chrono::Utc>>,
+}
+
+#[derive(Debug, Serialize)]
+struct PlanResponse {
+    id: Uuid,
+    onchain_plan_id: Option<i32>,
+    goal_name: String,
+    target_amount: i64,
+    current_balance: i64,
+    local_asset: String,
+    lock_until: Option<chrono::DateTime<chrono::Utc>>,
+    status: String,
+    created_at: chrono::DateTime<chrono::Utc>,
+    updated_at: chrono::DateTime<chrono::Utc>,
+}
+
+impl From<SavingsPlanRow> for PlanResponse {
+    fn from(r: SavingsPlanRow) -> Self {
+        fn bd_to_i64(bd: &BigDecimal) -> i64 {
+            bd.to_string().parse().unwrap_or(0)
+        }
+        PlanResponse {
+            id: r.id,
+            onchain_plan_id: r.onchain_plan_id,
+            goal_name: r.goal_name,
+            target_amount: bd_to_i64(&r.target_amount),
+            current_balance: bd_to_i64(&r.current_balance),
+            local_asset: r.local_asset,
+            lock_until: r.lock_until,
+            status: r.status,
+            created_at: r.created_at,
+            updated_at: r.updated_at,
+        }
+    }
+}
+
+#[derive(Debug, Deserialize)]
+struct PlanActionRequest {
+    amount: i64,
+}
+
+#[derive(Debug, Serialize)]
+struct PlanActionResponse {
+    id: Uuid,
+    current_balance: i64,
+    status: String,
+}
+
 #[derive(Debug, Deserialize)]
 struct HistoryQuery {
     limit: Option<i64>,
@@ -229,6 +298,10 @@ async fn main() {
         )
         .route("/remit/execute", post(execute_remittance))
         .route("/remit/history", get(get_history))
+        .route("/savings/plans", get(list_plans).post(create_plan))
+        .route("/savings/plans/{id}", get(get_plan))
+        .route("/savings/plans/{id}/deposit", post(deposit_to_plan))
+        .route("/savings/plans/{id}/withdraw", post(withdraw_from_plan))
         .layer(middleware::from_fn_with_state(
             state.clone(),
             auth_middleware,
@@ -666,6 +739,253 @@ async fn get_history(
     .collect();
 
     Ok(Json(events))
+}
+
+async fn create_plan(
+    State(state): State<Arc<AppState>>,
+    Extension(claims): Extension<JwtClaims>,
+    Json(body): Json<CreatePlanRequest>,
+) -> Result<Json<PlanResponse>, AppError> {
+    let user_id = user_id_from_claims(&claims)?;
+
+    if body.goal_name.trim().is_empty() {
+        return Err(AppError::BadRequest("goal_name cannot be empty".into()));
+    }
+    if body.target_amount <= 0 {
+        return Err(AppError::BadRequest(
+            "target_amount must be positive".into(),
+        ));
+    }
+    if body.local_asset.trim().is_empty() {
+        return Err(AppError::BadRequest("local_asset cannot be empty".into()));
+    }
+
+    let id = Uuid::new_v4();
+    let now = chrono::Utc::now();
+    let target_bd = BigDecimal::from(body.target_amount);
+    let zero_bd = BigDecimal::from(0);
+
+    sqlx::query(
+        r#"
+        INSERT INTO savings_plans (id, user_id, goal_name, target_amount, current_balance, local_asset, lock_until, status, created_at, updated_at)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, 'Active', $8, $8)
+        "#,
+    )
+    .bind(id)
+    .bind(user_id)
+    .bind(&body.goal_name)
+    .bind(target_bd)
+    .bind(zero_bd)
+    .bind(&body.local_asset)
+    .bind(body.lock_until)
+    .bind(now)
+    .execute(&state.db)
+    .await?;
+
+    Ok(Json(PlanResponse {
+        id,
+        onchain_plan_id: None,
+        goal_name: body.goal_name,
+        target_amount: body.target_amount,
+        current_balance: 0,
+        local_asset: body.local_asset,
+        lock_until: body.lock_until,
+        status: "Active".into(),
+        created_at: now,
+        updated_at: now,
+    }))
+}
+
+async fn list_plans(
+    State(state): State<Arc<AppState>>,
+    Extension(claims): Extension<JwtClaims>,
+) -> Result<Json<Vec<PlanResponse>>, AppError> {
+    let user_id = user_id_from_claims(&claims)?;
+
+    let plans = sqlx::query_as::<_, SavingsPlanRow>(
+        r#"
+        SELECT id, user_id, onchain_plan_id, goal_name, target_amount, current_balance,
+               local_asset, lock_until, status, created_at, updated_at
+        FROM savings_plans
+        WHERE user_id = $1
+        ORDER BY created_at DESC
+        "#,
+    )
+    .bind(user_id)
+    .fetch_all(&state.db)
+    .await?
+    .into_iter()
+    .map(PlanResponse::from)
+    .collect();
+
+    Ok(Json(plans))
+}
+
+async fn get_plan(
+    State(state): State<Arc<AppState>>,
+    Extension(claims): Extension<JwtClaims>,
+    Path(id): Path<Uuid>,
+) -> Result<Json<PlanResponse>, AppError> {
+    let user_id = user_id_from_claims(&claims)?;
+
+    let plan = sqlx::query_as::<_, SavingsPlanRow>(
+        r#"
+        SELECT id, user_id, onchain_plan_id, goal_name, target_amount, current_balance,
+               local_asset, lock_until, status, created_at, updated_at
+        FROM savings_plans
+        WHERE id = $1 AND user_id = $2
+        "#,
+    )
+    .bind(id)
+    .bind(user_id)
+    .fetch_optional(&state.db)
+    .await?
+    .ok_or(AppError::NotFound("Savings plan not found".into()))?;
+
+    Ok(Json(PlanResponse::from(plan)))
+}
+
+async fn deposit_to_plan(
+    State(state): State<Arc<AppState>>,
+    Extension(claims): Extension<JwtClaims>,
+    Path(id): Path<Uuid>,
+    Json(body): Json<PlanActionRequest>,
+) -> Result<Json<PlanActionResponse>, AppError> {
+    let user_id = user_id_from_claims(&claims)?;
+
+    if body.amount <= 0 {
+        return Err(AppError::BadRequest(
+            "Deposit amount must be positive".into(),
+        ));
+    }
+
+    let plan = sqlx::query_as::<_, SavingsPlanRow>(
+        r#"
+        SELECT id, user_id, onchain_plan_id, goal_name, target_amount, current_balance,
+               local_asset, lock_until, status, created_at, updated_at
+        FROM savings_plans
+        WHERE id = $1 AND user_id = $2
+        "#,
+    )
+    .bind(id)
+    .bind(user_id)
+    .fetch_optional(&state.db)
+    .await?
+    .ok_or(AppError::NotFound("Savings plan not found".into()))?;
+
+    if plan.status == "Closed" {
+        return Err(AppError::BadRequest("Savings plan is closed".into()));
+    }
+
+    let current: i64 = plan.current_balance.to_string().parse().unwrap_or(0);
+    let target: i64 = plan.target_amount.to_string().parse().unwrap_or(0);
+    let new_balance = current
+        .checked_add(body.amount)
+        .ok_or_else(|| AppError::Internal("Balance overflow".into()))?;
+    let new_status = if new_balance >= target {
+        "Completed".to_string()
+    } else {
+        "Active".to_string()
+    };
+
+    let now = chrono::Utc::now();
+    sqlx::query(
+        r#"
+        UPDATE savings_plans
+        SET current_balance = $1, status = $2, updated_at = $3
+        WHERE id = $4
+        "#,
+    )
+    .bind(BigDecimal::from(new_balance))
+    .bind(&new_status)
+    .bind(now)
+    .bind(id)
+    .execute(&state.db)
+    .await?;
+
+    Ok(Json(PlanActionResponse {
+        id,
+        current_balance: new_balance,
+        status: new_status,
+    }))
+}
+
+async fn withdraw_from_plan(
+    State(state): State<Arc<AppState>>,
+    Extension(claims): Extension<JwtClaims>,
+    Path(id): Path<Uuid>,
+    Json(body): Json<PlanActionRequest>,
+) -> Result<Json<PlanActionResponse>, AppError> {
+    let user_id = user_id_from_claims(&claims)?;
+
+    if body.amount <= 0 {
+        return Err(AppError::BadRequest(
+            "Withdrawal amount must be positive".into(),
+        ));
+    }
+
+    let plan = sqlx::query_as::<_, SavingsPlanRow>(
+        r#"
+        SELECT id, user_id, onchain_plan_id, goal_name, target_amount, current_balance,
+               local_asset, lock_until, status, created_at, updated_at
+        FROM savings_plans
+        WHERE id = $1 AND user_id = $2
+        "#,
+    )
+    .bind(id)
+    .bind(user_id)
+    .fetch_optional(&state.db)
+    .await?
+    .ok_or(AppError::NotFound("Savings plan not found".into()))?;
+
+    if plan.status == "Closed" || plan.status == "Withdrawn" {
+        return Err(AppError::BadRequest("Savings plan is not active".into()));
+    }
+
+    if let Some(lock_until) = plan.lock_until {
+        if chrono::Utc::now() < lock_until {
+            return Err(AppError::BadRequest("Plan timelock is still active".into()));
+        }
+    }
+
+    let current: i64 = plan.current_balance.to_string().parse().unwrap_or(0);
+    let target: i64 = plan.target_amount.to_string().parse().unwrap_or(0);
+
+    if body.amount > current {
+        return Err(AppError::BadRequest(
+            "Insufficient savings plan balance".into(),
+        ));
+    }
+
+    let new_balance = current - body.amount;
+    let new_status = if new_balance == 0 {
+        "Withdrawn".to_string()
+    } else if new_balance < target {
+        "Active".to_string()
+    } else {
+        plan.status
+    };
+
+    let now = chrono::Utc::now();
+    sqlx::query(
+        r#"
+        UPDATE savings_plans
+        SET current_balance = $1, status = $2, updated_at = $3
+        WHERE id = $4
+        "#,
+    )
+    .bind(BigDecimal::from(new_balance))
+    .bind(&new_status)
+    .bind(now)
+    .bind(id)
+    .execute(&state.db)
+    .await?;
+
+    Ok(Json(PlanActionResponse {
+        id,
+        current_balance: new_balance,
+        status: new_status,
+    }))
 }
 
 async fn auth_middleware(
