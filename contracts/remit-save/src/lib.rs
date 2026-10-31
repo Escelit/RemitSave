@@ -65,6 +65,33 @@ impl RemitSave {
         Ok(())
     }
 
+    pub fn is_paused(env: Env) -> bool {
+        env.storage()
+            .instance()
+            .get(&DataKey::IsPaused)
+            .unwrap_or(false)
+    }
+
+    pub fn pause(env: Env) -> Result<(), RemitError> {
+        let admin = Self::get_admin(env.clone())?;
+        admin.require_auth();
+
+        env.storage().instance().set(&DataKey::IsPaused, &true);
+        env.events()
+            .publish((Symbol::new(&env, "pause"), admin), ());
+        Ok(())
+    }
+
+    pub fn unpause(env: Env) -> Result<(), RemitError> {
+        let admin = Self::get_admin(env.clone())?;
+        admin.require_auth();
+
+        env.storage().instance().set(&DataKey::IsPaused, &false);
+        env.events()
+            .publish((Symbol::new(&env, "unpause"), admin), ());
+        Ok(())
+    }
+
     pub fn register_user(
         env: Env,
         user: Address,
@@ -268,6 +295,9 @@ impl RemitSave {
         total_amount: i128,
         incoming_asset: Address,
     ) -> Result<RemittanceResult, RemitError> {
+        if Self::is_paused(env.clone()) {
+            return Err(RemitError::ContractPaused);
+        }
         sender.require_auth();
 
         if total_amount <= 0 {
@@ -444,6 +474,9 @@ impl RemitSave {
         amount: i128,
         asset: Address,
     ) -> Result<(), RemitError> {
+        if Self::is_paused(env.clone()) {
+            return Err(RemitError::ContractPaused);
+        }
         owner.require_auth();
         if amount <= 0 {
             return Err(RemitError::InvalidAmount);
@@ -476,6 +509,9 @@ impl RemitSave {
     }
 
     pub fn withdraw_from_plan(env: Env, owner: Address, plan_id: u32) -> Result<i128, RemitError> {
+        if Self::is_paused(env.clone()) {
+            return Err(RemitError::ContractPaused);
+        }
         owner.require_auth();
         let plan_key = DataKey::Plan(owner.clone(), plan_id);
         let mut plan: SavingsPlan = env
@@ -510,6 +546,9 @@ impl RemitSave {
     }
 
     pub fn close_savings_plan(env: Env, owner: Address, plan_id: u32) -> Result<i128, RemitError> {
+        if Self::is_paused(env.clone()) {
+            return Err(RemitError::ContractPaused);
+        }
         owner.require_auth();
         let plan_key = DataKey::Plan(owner.clone(), plan_id);
         let mut plan: SavingsPlan = env

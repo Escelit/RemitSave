@@ -55,6 +55,9 @@ impl VaultPoolContract {
         user: Address,
         amount: i128,
     ) -> Result<i128, VaultError> {
+        if Self::is_pool_paused(env.clone(), pool_id) {
+            return Err(VaultError::ContractPaused);
+        }
         user.require_auth();
         if amount <= 0 {
             return Err(VaultError::InvalidAmount);
@@ -114,6 +117,9 @@ impl VaultPoolContract {
         user: Address,
         share_amount: i128,
     ) -> Result<i128, VaultError> {
+        if Self::is_pool_paused(env.clone(), pool_id) {
+            return Err(VaultError::ContractPaused);
+        }
         user.require_auth();
         if share_amount <= 0 {
             return Err(VaultError::InvalidAmount);
@@ -328,6 +334,45 @@ impl VaultPoolContract {
         env.storage().persistent().set(&pool_key, &pool);
         env.storage().persistent().remove(&proposed_key);
 
+        Ok(())
+    }
+
+    pub fn is_pool_paused(env: Env, pool_id: u32) -> bool {
+        env.storage()
+            .persistent()
+            .get(&DataKey::PoolIsPaused(pool_id))
+            .unwrap_or(false)
+    }
+
+    pub fn pause_pool(env: Env, pool_id: u32) -> Result<(), VaultError> {
+        let pool_key = DataKey::Pool(pool_id);
+        let pool: VaultPool = env
+            .storage()
+            .persistent()
+            .get(&pool_key)
+            .ok_or(VaultError::PoolNotFound)?;
+
+        pool.admin.require_auth();
+
+        env.storage()
+            .persistent()
+            .set(&DataKey::PoolIsPaused(pool_id), &true);
+        Ok(())
+    }
+
+    pub fn unpause_pool(env: Env, pool_id: u32) -> Result<(), VaultError> {
+        let pool_key = DataKey::Pool(pool_id);
+        let pool: VaultPool = env
+            .storage()
+            .persistent()
+            .get(&pool_key)
+            .ok_or(VaultError::PoolNotFound)?;
+
+        pool.admin.require_auth();
+
+        env.storage()
+            .persistent()
+            .set(&DataKey::PoolIsPaused(pool_id), &false);
         Ok(())
     }
 }

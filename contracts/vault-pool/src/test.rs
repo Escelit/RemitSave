@@ -478,3 +478,30 @@ fn test_two_phase_pool_admin_transfer() {
     // Pending admin cleared
     assert!(client.try_get_pool_proposed_admin(&pool_id).is_err());
 }
+
+#[test]
+fn test_pool_emergency_pause_mechanism() {
+    let (_env, client, _token, user, pool_id, _admin) = setup_pool();
+
+    assert!(!client.is_pool_paused(&pool_id));
+
+    // Pause pool
+    client.pause_pool(&pool_id);
+    assert!(client.is_pool_paused(&pool_id));
+
+    // Deposit fails when paused
+    let dep_res = client.try_vault_deposit(&pool_id, &user, &10_000);
+    assert_eq!(dep_res, Err(Ok(VaultError::ContractPaused)));
+
+    // Withdraw fails when paused
+    let w_res = client.try_vault_withdraw(&pool_id, &user, &10_000);
+    assert_eq!(w_res, Err(Ok(VaultError::ContractPaused)));
+
+    // Unpause pool
+    client.unpause_pool(&pool_id);
+    assert!(!client.is_pool_paused(&pool_id));
+
+    // Deposit succeeds after unpausing
+    let shares = client.vault_deposit(&pool_id, &user, &10_000);
+    assert_eq!(shares, 10_000);
+}

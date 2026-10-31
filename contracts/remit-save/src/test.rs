@@ -340,3 +340,60 @@ fn test_two_phase_admin_transfer() {
     // Proposed admin is now cleared
     assert!(client.try_get_proposed_admin().is_err());
 }
+
+#[test]
+fn test_emergency_pause_mechanism() {
+    let (env, client, admin, fee_recipient, sender, beneficiary, token_address) = setup_test();
+    client.initialize(&admin, &fee_recipient, &50);
+
+    assert!(!client.is_paused());
+
+    // Register user and create rule
+    client.register_user(
+        &sender,
+        &Symbol::new(&env, "NG"),
+        &Bytes::from_slice(&env, b"+234"),
+    );
+    let plan_id = client.create_savings_plan(
+        &sender,
+        &Symbol::new(&env, "School"),
+        &10000,
+        &token_address,
+        &None,
+    );
+    let rule = RemittanceRule {
+        sender: sender.clone(),
+        beneficiary: beneficiary.clone(),
+        incoming_asset: token_address.clone(),
+        local_asset: token_address.clone(),
+        split_type: SplitType::Percentage,
+        split_value: 3000,
+        savings_plan_id: Some(plan_id),
+        active: true,
+    };
+    let rule_id = client.set_remittance_rule(&sender, &rule);
+
+    // Pause contract
+    client.pause();
+    assert!(client.is_paused());
+
+    // Remittance execution fails when paused
+    let remit_res = client.try_execute_remittance(&sender, &rule_id, &1000, &token_address);
+    assert_eq!(remit_res, Err(Ok(RemitError::ContractPaused)));
+
+    // Deposit to plan fails when paused
+    let dep_res = client.try_deposit_to_plan(&sender, &plan_id, &100, &token_address);
+    assert_eq!(dep_res, Err(Ok(RemitError::ContractPaused)));
+
+    // Withdraw from plan fails when paused
+    let w_res = client.try_withdraw_from_plan(&sender, &plan_id);
+    assert_eq!(w_res, Err(Ok(RemitError::ContractPaused)));
+
+    // Unpause contract
+    client.unpause();
+    assert!(!client.is_paused());
+
+    // Remittance succeeds after unpausing
+    let result = client.execute_remittance(&sender, &rule_id, &1000, &token_address);
+    assert_eq!(result.fee_amount, 5);
+}
