@@ -32,6 +32,39 @@ impl RemitSave {
         Ok(())
     }
 
+    pub fn get_admin(env: Env) -> Result<Address, RemitError> {
+        env.storage()
+            .instance()
+            .get(&DataKey::Admin)
+            .ok_or(RemitError::NotInitialized)
+    }
+
+    pub fn propose_admin(env: Env, new_admin: Address) -> Result<(), RemitError> {
+        let admin = Self::get_admin(env.clone())?;
+        admin.require_auth();
+
+        env.storage()
+            .instance()
+            .set(&DataKey::ProposedAdmin, &new_admin);
+        Ok(())
+    }
+
+    pub fn get_proposed_admin(env: Env) -> Result<Address, RemitError> {
+        env.storage()
+            .instance()
+            .get(&DataKey::ProposedAdmin)
+            .ok_or(RemitError::NoPendingAdmin)
+    }
+
+    pub fn accept_admin(env: Env) -> Result<(), RemitError> {
+        let proposed = Self::get_proposed_admin(env.clone())?;
+        proposed.require_auth();
+
+        env.storage().instance().set(&DataKey::Admin, &proposed);
+        env.storage().instance().remove(&DataKey::ProposedAdmin);
+        Ok(())
+    }
+
     pub fn register_user(
         env: Env,
         user: Address,

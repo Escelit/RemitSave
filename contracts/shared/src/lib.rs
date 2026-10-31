@@ -111,10 +111,12 @@ pub enum DataKey {
     FeeRecipient,
     ProtocolFeeBps,
     Anchor(Address),
+    ProposedAdmin,
     // Vault-pool specific keys
     PoolLastUpdated(u32),
     PoolUserBalance(Address, u32),
     PoolUserDepositTime(Address, u32),
+    PoolProposedAdmin(u32),
 }
 
 #[contracttype]
@@ -140,6 +142,7 @@ pub enum RemitError {
     PlanClosed = 9,
     Overflow = 10,
     InvalidSplitValue = 11,
+    NoPendingAdmin = 12,
 }
 
 #[soroban_sdk::contracterror]
@@ -156,6 +159,7 @@ pub enum VaultError {
     InsufficientLiquidity = 8,
     LockupActive = 9,
     InvalidBps = 10,
+    NoPendingAdmin = 11,
 }
 
 pub const SHARE_PRICE_DENOM: i128 = 10_000_000; // 1e7, so 1.0 = 10_000_000

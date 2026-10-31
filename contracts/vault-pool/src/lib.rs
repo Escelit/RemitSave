@@ -274,6 +274,62 @@ impl VaultPoolContract {
 
         Ok(())
     }
+
+    pub fn propose_pool_admin(
+        env: Env,
+        pool_id: u32,
+        new_admin: Address,
+    ) -> Result<(), VaultError> {
+        let pool_key = DataKey::Pool(pool_id);
+        let pool: VaultPool = env
+            .storage()
+            .persistent()
+            .get(&pool_key)
+            .ok_or(VaultError::PoolNotFound)?;
+
+        pool.admin.require_auth();
+
+        env.storage()
+            .persistent()
+            .set(&DataKey::PoolProposedAdmin(pool_id), &new_admin);
+        Ok(())
+    }
+
+    pub fn get_pool_proposed_admin(env: Env, pool_id: u32) -> Result<Address, VaultError> {
+        let pool_key = DataKey::Pool(pool_id);
+        if !env.storage().persistent().has(&pool_key) {
+            return Err(VaultError::PoolNotFound);
+        }
+
+        env.storage()
+            .persistent()
+            .get(&DataKey::PoolProposedAdmin(pool_id))
+            .ok_or(VaultError::NoPendingAdmin)
+    }
+
+    pub fn accept_pool_admin(env: Env, pool_id: u32) -> Result<(), VaultError> {
+        let pool_key = DataKey::Pool(pool_id);
+        let mut pool: VaultPool = env
+            .storage()
+            .persistent()
+            .get(&pool_key)
+            .ok_or(VaultError::PoolNotFound)?;
+
+        let proposed_key = DataKey::PoolProposedAdmin(pool_id);
+        let proposed: Address = env
+            .storage()
+            .persistent()
+            .get(&proposed_key)
+            .ok_or(VaultError::NoPendingAdmin)?;
+
+        proposed.require_auth();
+
+        pool.admin = proposed;
+        env.storage().persistent().set(&pool_key, &pool);
+        env.storage().persistent().remove(&proposed_key);
+
+        Ok(())
+    }
 }
 
 #[cfg(test)]

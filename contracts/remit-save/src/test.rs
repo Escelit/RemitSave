@@ -316,3 +316,27 @@ fn test_withdraw_and_timelock() {
     assert_eq!(token.balance(&sender), 10000);
     assert_eq!(token.balance(&client.address), 0);
 }
+
+#[test]
+fn test_two_phase_admin_transfer() {
+    let (env, client, admin, fee_recipient, _, _, _) = setup_test();
+    client.initialize(&admin, &fee_recipient, &50);
+
+    assert_eq!(client.get_admin(), admin);
+
+    // No pending admin initially
+    assert!(client.try_get_proposed_admin().is_err());
+    assert!(client.try_accept_admin().is_err());
+
+    // Propose new admin
+    let new_admin = Address::generate(&env);
+    client.propose_admin(&new_admin);
+    assert_eq!(client.get_proposed_admin(), new_admin);
+
+    // Accept admin transfer
+    client.accept_admin();
+    assert_eq!(client.get_admin(), new_admin);
+
+    // Proposed admin is now cleared
+    assert!(client.try_get_proposed_admin().is_err());
+}

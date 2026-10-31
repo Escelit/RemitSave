@@ -453,3 +453,28 @@ fn test_zero_apy_no_yield() {
     assert_eq!(pool.total_deposits, 10_000);
     assert_eq!(pool.share_price, SHARE_PRICE_DENOM);
 }
+
+#[test]
+fn test_two_phase_pool_admin_transfer() {
+    let (env, client, _token, _user, pool_id, admin) = setup_pool();
+
+    let pool = client.get_pool_info(&pool_id);
+    assert_eq!(pool.admin, admin);
+
+    // No pending admin initially
+    assert!(client.try_get_pool_proposed_admin(&pool_id).is_err());
+    assert!(client.try_accept_pool_admin(&pool_id).is_err());
+
+    // Propose new admin
+    let new_admin = Address::generate(&env);
+    client.propose_pool_admin(&pool_id, &new_admin);
+    assert_eq!(client.get_pool_proposed_admin(&pool_id), new_admin);
+
+    // Accept pool admin
+    client.accept_pool_admin(&pool_id);
+    let updated_pool = client.get_pool_info(&pool_id);
+    assert_eq!(updated_pool.admin, new_admin);
+
+    // Pending admin cleared
+    assert!(client.try_get_pool_proposed_admin(&pool_id).is_err());
+}
