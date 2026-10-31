@@ -80,6 +80,32 @@ export interface RemittanceEvent {
   created_at: string;
 }
 
+export interface SavingsPlan {
+  id: string;
+  onchain_plan_id: number | null;
+  goal_name: string;
+  target_amount: number;
+  current_balance: number;
+  local_asset: string;
+  lock_until: string | null;
+  status: 'Active' | 'Completed' | 'Withdrawn' | 'Closed';
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CreateSavingsPlanRequest {
+  goal_name: string;
+  target_amount: number;
+  local_asset: string;
+  lock_until?: string | null;
+}
+
+export interface PlanActionResult {
+  id: string;
+  current_balance: number;
+  status: string;
+}
+
 export const api = {
   createRule: (data: CreateRuleRequest) =>
     request<RemittanceRule>('POST', '/remit/rules', data),
@@ -101,4 +127,19 @@ export const api = {
 
   getHistory: (limit = 50, offset = 0) =>
     request<RemittanceEvent[]>('GET', `/remit/history?limit=${limit}&offset=${offset}`),
+
+  listSavingsPlans: () =>
+    request<SavingsPlan[]>('GET', '/savings/plans'),
+
+  createSavingsPlan: (data: CreateSavingsPlanRequest) =>
+    request<SavingsPlan>('POST', '/savings/plans', data),
+
+  getSavingsPlan: (id: string) =>
+    request<SavingsPlan>('GET', `/savings/plans/${id}`),
+
+  depositToPlan: (id: string, amount: number) =>
+    request<PlanActionResult>('POST', `/savings/plans/${id}/deposit`, { amount }),
+
+  withdrawFromPlan: (id: string, amount: number) =>
+    request<PlanActionResult>('POST', `/savings/plans/${id}/withdraw`, { amount }),
 };

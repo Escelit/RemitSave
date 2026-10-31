@@ -140,13 +140,14 @@ The following areas represent the remaining ~35% of the platform. They are well-
 
 ### Smart Contracts
 
-- **[ ] `vault_withdraw` lockup enforcement** — add a check that `env.ledger().timestamp() >= lock_until` before allowing vault withdrawal, and write a test that verifies early withdrawal is rejected.
-- **[ ] Emergency pause mechanism** — add an `is_paused: bool` flag to contract storage; gate `execute_remittance`, `vault_deposit`, and `vault_withdraw` behind it; expose `pause` / `unpause` admin functions.
-- **[ ] Two-phase admin transfer** — replace the single `admin` setter with `propose_admin` + `accept_admin` to prevent accidental ownership loss.
+- **[x] `vault_withdraw` lockup enforcement** — check `env.ledger().timestamp() >= lock_until` before allowing vault withdrawal, verified with test suite.
+- **[x] Emergency pause mechanism** — `is_paused: bool` flag in contract storage; gates `execute_remittance`, `vault_deposit`, and `vault_withdraw`; exposed `pause` / `unpause` admin functions.
+- **[x] Two-phase admin transfer** — `propose_admin` + `accept_admin` implemented across `remit-save` and `vault-pool` contracts.
+- **[x] Partial plan withdrawals & goal completion** — `withdraw_amount_from_plan` for flexible goal withdrawals and automatic `Completed` status transitions.
 
 ### Backend
 
-- **[ ] Savings service** — implement `POST /savings/plan`, `GET /savings/plans`, `POST /savings/plan/:id/deposit`, `POST /savings/plan/:id/withdraw` in `backend/savings-service` (skeleton exists).
+- **[x] Savings service** — implemented `POST /savings/plans`, `GET /savings/plans`, `GET /savings/plans/:id`, `POST /savings/plans/:id/deposit`, `POST /savings/plans/:id/withdraw` in `remit-service` with database migration `002_savings_plans.sql`.
 - **[ ] Real anchor integration (Cowrie / NGN)** — replace the stub in `anchor-relayer` with a real SEP-24 deposit/withdrawal flow against the Cowrie sandbox API.
 - **[ ] KYC provider integration** — wire up SmileID or IdentityPass in `auth-service/src/providers/` behind the existing `POST /auth/kyc` endpoint.
 - **[ ] Notification service** — implement the NATS consumer in `notification-service` that listens for `RemittanceExecuted` events and sends an SMS via Africa's Talking.

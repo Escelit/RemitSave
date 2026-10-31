@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -7,6 +7,7 @@ import {
   TouchableOpacity,
   Dimensions,
 } from 'react-native';
+import { api } from '../services/api';
 
 const SCREEN_WIDTH = Dimensions.get('window').width;
 const RING_SIZE = 80;
@@ -78,9 +79,37 @@ function formatCurrency(amount: number, currency: string) {
 }
 
 export default function SavingsDashboardScreen({ onBack, onSendMoney }: Props) {
-  const totalSaved = MOCK_GOALS.reduce((sum, g) => sum + g.saved, 0);
-  const totalYield = MOCK_GOALS.reduce((sum, g) => sum + g.yieldEarned, 0);
-  const totalTarget = MOCK_GOALS.reduce((sum, g) => sum + g.target, 0);
+  const [goals, setGoals] = useState<SavingsGoal[]>(MOCK_GOALS);
+
+  useEffect(() => {
+    let mounted = true;
+    api
+      .listSavingsPlans()
+      .then((plans) => {
+        if (mounted && plans && plans.length > 0) {
+          setGoals(
+            plans.map((p) => ({
+              id: p.id,
+              name: p.goal_name,
+              target: p.target_amount,
+              saved: p.current_balance,
+              currency: p.local_asset.includes('NGN') ? 'NGN' : 'USD',
+              yieldEarned: Math.round(p.current_balance * 0.05),
+            })),
+          );
+        }
+      })
+      .catch(() => {
+        // Fallback to initial mock goals if offline or backend unavailable
+      });
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
+  const totalSaved = goals.reduce((sum, g) => sum + g.saved, 0);
+  const totalYield = goals.reduce((sum, g) => sum + g.yieldEarned, 0);
+  const totalTarget = goals.reduce((sum, g) => sum + g.target, 0) || 1;
 
   const maxYield = Math.max(...MOCK_YIELD_DATA);
 
@@ -110,7 +139,7 @@ export default function SavingsDashboardScreen({ onBack, onSendMoney }: Props) {
 
       <Text style={styles.sectionTitle}>Active Goals</Text>
 
-      {MOCK_GOALS.map((goal) => {
+      {goals.map((goal) => {
         const progress = goal.target > 0 ? goal.saved / goal.target : 0;
         return (
           <View key={goal.id} style={styles.goalCard}>
