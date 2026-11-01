@@ -1,6 +1,6 @@
 # Makefile for RemitSave Africa
 
-.PHONY: all build test clean build-contracts build-backend bootstrap
+.PHONY: all build test clean build-contracts build-backend bootstrap test-contracts test-backend test-frontend lint-frontend
 
 all: build
 
@@ -15,13 +15,18 @@ build-contracts:
 build-backend:
 	cd backend && cargo build --release
 
-test: test-contracts test-backend
+test: test-contracts test-backend test-frontend
 
 test-contracts:
 	cd contracts && cargo test
 
 test-backend:
 	cd backend && cargo test
+
+test-frontend: lint-frontend
+
+lint-frontend:
+	cd frontend/diaspora-app && npm run lint
 
 clean:
 	cd contracts && cargo clean
