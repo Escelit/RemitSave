@@ -9,7 +9,7 @@ import {
   ActivityIndicator,
   Alert,
 } from 'react-native';
-import { api, RemittanceRule } from '../services/api';
+import { api, RemittanceRule, SavingsPlan } from '../services/api';
 
 const DEFAULT_SPLIT_BPS = 3000;
 
@@ -24,12 +24,28 @@ export default function SendMoneyScreen({ onBack, onSendComplete }: Props) {
   const [splitBps, setSplitBps] = useState(DEFAULT_SPLIT_BPS);
   const [rules, setRules] = useState<RemittanceRule[]>([]);
   const [selectedRuleId, setSelectedRuleId] = useState<string | null>(null);
+  const [savingsPlans, setSavingsPlans] = useState<SavingsPlan[]>([]);
+  const [selectedPlanId, setSelectedPlanId] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
   const [loadingRules, setLoadingRules] = useState(true);
 
   useEffect(() => {
     loadRules();
+    loadSavingsPlans();
   }, []);
+
+  const loadSavingsPlans = async () => {
+    try {
+      const data = await api.listSavingsPlans();
+      const active = data.filter((p) => p.status === 'Active' || p.status === 'Completed');
+      setSavingsPlans(active);
+      if (active.length > 0) {
+        setSelectedPlanId(active[0].id);
+      }
+    } catch {
+      // No plans yet or API unavailable
+    }
+  };
 
   const loadRules = async () => {
     setLoadingRules(true);
@@ -82,6 +98,7 @@ export default function SendMoneyScreen({ onBack, onSendComplete }: Props) {
           local_asset: 'NGN',
           split_type: 'Percentage',
           split_value: splitBps,
+          savings_plan_id: selectedPlanId || undefined,
         });
         ruleId = rule.id;
       }
@@ -91,10 +108,15 @@ export default function SendMoneyScreen({ onBack, onSendComplete }: Props) {
         total_amount: totalCents,
       });
 
+      const selectedPlan = savingsPlans.find((p) => p.id === selectedPlanId);
+      const planNotice = selectedPlan
+        ? ` into "${selectedPlan.goal_name}"`
+        : '';
+
       Alert.alert(
         'Sent Successfully!',
         `Sent ${displayAmount(result.payout_amount)} to beneficiary\n` +
-        `Saved ${displayAmount(result.savings_amount)}\n` +
+        `Saved ${displayAmount(result.savings_amount)}${planNotice}\n` +
         `Fee: ${displayAmount(result.fee_amount)}`,
       );
 
@@ -106,6 +128,8 @@ export default function SendMoneyScreen({ onBack, onSendComplete }: Props) {
       setSending(false);
     }
   };
+
+  const selectedPlan = savingsPlans.find((p) => p.id === selectedPlanId);
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
@@ -175,6 +199,49 @@ export default function SendMoneyScreen({ onBack, onSendComplete }: Props) {
         </View>
       </View>
 
+      {splitBps > 0 && (
+        <View style={styles.section}>
+          <View style={styles.splitHeader}>
+            <Text style={styles.label}>Destination Savings Goal</Text>
+            {selectedPlan && (
+              <Text style={styles.planStatusBadge}>{selectedPlan.status}</Text>
+            )}
+          </View>
+          {savingsPlans.length > 0 ? (
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.planScroll}>
+              {savingsPlans.map((plan) => {
+                const isSelected = plan.id === selectedPlanId;
+                return (
+                  <TouchableOpacity
+                    key={plan.id}
+                    style={[styles.planCard, isSelected && styles.planCardActive]}
+                    onPress={() => setSelectedPlanId(plan.id)}
+                  >
+                    <Text style={[styles.planName, isSelected && styles.planNameActive]}>
+                      {plan.goal_name}
+                    </Text>
+                    <Text style={styles.planBalance}>
+                      ${(plan.current_balance / 100).toFixed(2)} / ${(plan.target_amount / 100).toFixed(2)}
+                    </Text>
+                    {savingsAmount > 0 && isSelected && (
+                      <Text style={styles.planAddPreview}>
+                        +${displayAmount(savingsAmount)}
+                      </Text>
+                    )}
+                  </TouchableOpacity>
+                );
+              })}
+            </ScrollView>
+          ) : (
+            <View style={styles.noPlanBox}>
+              <Text style={styles.noPlanText}>
+                No savings goals found. Auto-saved funds will be deposited to your general savings.
+              </Text>
+            </View>
+          )}
+        </View>
+      )}
+
       {numericAmount > 0 && (
         <View style={styles.preview}>
           <Text style={styles.previewTitle}>Split Preview</Text>
@@ -211,7 +278,9 @@ export default function SendMoneyScreen({ onBack, onSendComplete }: Props) {
             </View>
             <View style={styles.previewItem}>
               <View style={styles.dotSavings} />
-              <Text style={styles.previewLabel}>Saved</Text>
+              <Text style={styles.previewLabel}>
+                {selectedPlan ? selectedPlan.goal_name : 'Saved'}
+              </Text>
               <Text style={styles.previewValue}>
                 ${displayAmount(savingsAmount)}
               </Text>
@@ -423,5 +492,56 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontSize: 17,
     fontWeight: '700',
+  },
+  planScroll: {
+    marginTop: 8,
+  },
+  planCard: {
+    backgroundColor: '#0F2035',
+    borderColor: '#1E334D',
+    borderWidth: 1,
+    borderRadius: 12,
+    padding: 12,
+    marginRight: 10,
+    minWidth: 140,
+  },
+  planCardActive: {
+    borderColor: '#00D4AA',
+    backgroundColor: '#0F2F3B',
+  },
+  planName: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#CCCCCC',
+    marginBottom: 4,
+  },
+  planNameActive: {
+    color: '#FFFFFF',
+  },
+  planBalance: {
+    fontSize: 12,
+    color: '#8899A6',
+  },
+  planAddPreview: {
+    fontSize: 11,
+    color: '#00D4AA',
+    fontWeight: '700',
+    marginTop: 4,
+  },
+  planStatusBadge: {
+    fontSize: 11,
+    color: '#00D4AA',
+    fontWeight: '600',
+  },
+  noPlanBox: {
+    backgroundColor: '#0F2035',
+    borderRadius: 10,
+    padding: 12,
+    marginTop: 6,
+  },
+  noPlanText: {
+    color: '#8899A6',
+    fontSize: 12,
+    lineHeight: 16,
   },
 });

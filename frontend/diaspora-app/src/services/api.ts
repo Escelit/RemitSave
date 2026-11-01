@@ -106,7 +106,29 @@ export interface PlanActionResult {
   status: string;
 }
 
+export interface LoginRequest {
+  email: string;
+  password: string;
+}
+
+export interface LoginResponse {
+  user: {
+    id: string;
+    email: string;
+    phone: string;
+    country: string;
+    kyc_level: number;
+    stellar_address?: string | null;
+    created_at: string;
+    last_active: string;
+  };
+  token: string;
+}
+
 export const api = {
+  login: (data: LoginRequest) =>
+    request<LoginResponse>('POST', '/auth/login', data),
+
   createRule: (data: CreateRuleRequest) =>
     request<RemittanceRule>('POST', '/remit/rules', data),
 
