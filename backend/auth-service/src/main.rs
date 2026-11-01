@@ -6,7 +6,9 @@ use axum::middleware::{self, Next};
 use axum::response::Response;
 use axum::routing::{get, post};
 use axum::{Json, Router};
-use backend_shared::{AppError, JwtClaims, RegisterRequest, RegisterResponse, UserPublic};
+use backend_shared::{
+    AppError, JwtClaims, LoginRequest, LoginResponse, RegisterRequest, RegisterResponse, UserPublic,
+};
 use serde_json::json;
 use sqlx::PgPool;
 use tower_http::cors::{Any, CorsLayer};
@@ -59,6 +61,7 @@ async fn main() {
     let app = Router::new()
         .route("/health", get(health))
         .route("/auth/register", post(register))
+        .route("/auth/login", post(login))
         .merge(auth_routes)
         .layer(cors)
         .with_state(state);
@@ -143,6 +146,67 @@ async fn register(
     };
 
     Ok(Json(RegisterResponse { user, token }))
+}
+
+async fn login(
+    State(state): State<Arc<AppState>>,
+    Json(req): Json<LoginRequest>,
+) -> Result<Json<LoginResponse>, AppError> {
+    if req.email.is_empty() || req.password.is_empty() {
+        return Err(AppError::BadRequest(
+            "Email and password are required".into(),
+        ));
+    }
+
+    let user = sqlx::query_as::<_, backend_shared::User>(
+        r#"
+        SELECT id, email, phone, country, password_hash, kyc_level,
+               stellar_address, created_at, last_active
+        FROM users WHERE email = $1
+        "#,
+    )
+    .bind(&req.email)
+    .fetch_optional(&state.db)
+    .await?
+    .ok_or_else(|| AppError::Unauthorized("Invalid email or password".into()))?;
+
+    let valid = bcrypt::verify(&req.password, &user.password_hash)
+        .map_err(|e| AppError::Internal(format!("Failed to verify password: {e}")))?;
+
+    if !valid {
+        return Err(AppError::Unauthorized("Invalid email or password".into()));
+    }
+
+    let token = jwt::issue_token(user.id, &state.jwt_secret)?;
+
+    let now = chrono::Utc::now();
+    let session_expiry = now + chrono::Duration::hours(24);
+
+    let _ = sqlx::query("UPDATE users SET last_active = $1 WHERE id = $2")
+        .bind(now)
+        .bind(user.id)
+        .execute(&state.db)
+        .await;
+
+    let _ = sqlx::query(
+        r#"
+        INSERT INTO sessions (id, user_id, token, expires_at, created_at)
+        VALUES ($1, $2, $3, $4, $5)
+        "#,
+    )
+    .bind(uuid::Uuid::new_v4())
+    .bind(user.id)
+    .bind(&token)
+    .bind(session_expiry)
+    .bind(now)
+    .execute(&state.db)
+    .await;
+
+    let user_pub: UserPublic = user.into();
+    Ok(Json(LoginResponse {
+        user: user_pub,
+        token,
+    }))
 }
 
 async fn me(

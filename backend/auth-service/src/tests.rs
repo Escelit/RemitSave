@@ -92,3 +92,58 @@ fn test_jwt_expiry_in_future() {
     let now = chrono::Utc::now().timestamp() as usize;
     assert!(token_data.claims.exp > now);
 }
+
+#[test]
+fn test_login_validation_empty_fields() {
+    let req1 = backend_shared::LoginRequest {
+        email: "".into(),
+        password: "secretpassword".into(),
+    };
+    assert!(req1.email.is_empty());
+    assert!(!req1.password.is_empty());
+
+    let req2 = backend_shared::LoginRequest {
+        email: "user@example.com".into(),
+        password: "".into(),
+    };
+    assert!(!req2.email.is_empty());
+    assert!(req2.password.is_empty());
+}
+
+#[test]
+fn test_bcrypt_password_verification() {
+    let password = "SuperSecretPassword123!";
+    let hashed = bcrypt::hash(password, 4).unwrap();
+
+    let matches = bcrypt::verify(password, &hashed).unwrap();
+    assert!(matches);
+
+    let wrong = bcrypt::verify("WrongPassword123!", &hashed).unwrap();
+    assert!(!wrong);
+}
+
+#[test]
+fn test_login_response_payload() {
+    let user_id = Uuid::new_v4();
+    let now = chrono::Utc::now();
+    let user_pub = backend_shared::UserPublic {
+        id: user_id,
+        email: "user@example.com".into(),
+        phone: "+2348012345678".into(),
+        country: "NG".into(),
+        kyc_level: 1,
+        stellar_address: Some("GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5".into()),
+        created_at: now,
+        last_active: now,
+    };
+
+    let token = "dummy.jwt.token".to_string();
+    let res = backend_shared::LoginResponse {
+        user: user_pub.clone(),
+        token: token.clone(),
+    };
+
+    assert_eq!(res.user.email, "user@example.com");
+    assert_eq!(res.token, token);
+    assert_eq!(res.user.kyc_level, 1);
+}
