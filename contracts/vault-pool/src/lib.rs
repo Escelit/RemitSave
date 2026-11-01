@@ -1,6 +1,9 @@
 #![no_std]
-use rs_shared::{DataKey, VaultError, VaultPool, YieldSource, SHARE_PRICE_DENOM, YEAR_SECS};
-use soroban_sdk::{contract, contractimpl, token, Address, Env, Symbol};
+use rs_shared::{
+    DataKey, VaultDepositEvent, VaultError, VaultPool, VaultWithdrawEvent, YieldSource,
+    SHARE_PRICE_DENOM, YEAR_SECS,
+};
+use soroban_sdk::{contract, contractimpl, token, Address, Env, Symbol, Vec};
 
 #[contract]
 pub struct VaultPoolContract;
@@ -103,10 +106,22 @@ impl VaultPoolContract {
             &existing.checked_add(shares).ok_or(VaultError::Overflow)?,
         );
 
-        let lock_key = DataKey::PoolUserDepositTime(user, pool_id);
+        let lock_key = DataKey::PoolUserDepositTime(user.clone(), pool_id);
         env.storage()
             .persistent()
             .set(&lock_key, &env.ledger().timestamp());
+
+        env.events().publish(
+            (Symbol::new(&env, "vault_deposit"), pool_id, user.clone()),
+            VaultDepositEvent {
+                pool_id,
+                user,
+                amount,
+                shares,
+                share_price: pool.share_price,
+                timestamp: env.ledger().timestamp(),
+            },
+        );
 
         Ok(shares)
     }
@@ -181,6 +196,18 @@ impl VaultPoolContract {
         } else {
             env.storage().persistent().remove(&user_key);
         }
+
+        env.events().publish(
+            (Symbol::new(&env, "vault_withdraw"), pool_id, user.clone()),
+            VaultWithdrawEvent {
+                pool_id,
+                user,
+                amount,
+                shares: share_amount,
+                share_price: pool.share_price,
+                timestamp: env.ledger().timestamp(),
+            },
+        );
 
         Ok(amount)
     }
@@ -357,6 +384,8 @@ impl VaultPoolContract {
         env.storage()
             .persistent()
             .set(&DataKey::PoolIsPaused(pool_id), &true);
+        env.events()
+            .publish((Symbol::new(&env, "pause_pool"), pool_id, pool.admin), ());
         Ok(())
     }
 
@@ -373,7 +402,26 @@ impl VaultPoolContract {
         env.storage()
             .persistent()
             .set(&DataKey::PoolIsPaused(pool_id), &false);
+        env.events()
+            .publish((Symbol::new(&env, "unpause_pool"), pool_id, pool.admin), ());
         Ok(())
+    }
+
+    pub fn get_pool_count(env: Env) -> u32 {
+        let count_key = DataKey::GlobalPoolCount;
+        env.storage().instance().get(&count_key).unwrap_or(0)
+    }
+
+    pub fn list_pools(env: Env) -> Vec<VaultPool> {
+        let count = Self::get_pool_count(env.clone());
+        let mut pools = Vec::new(&env);
+        for id in 0..count {
+            let key = DataKey::Pool(id);
+            if let Some(pool) = env.storage().persistent().get::<_, VaultPool>(&key) {
+                pools.push_back(pool);
+            }
+        }
+        pools
     }
 }
 

@@ -129,6 +129,28 @@ pub struct RemittanceResult {
     pub fee_amount: i128,
 }
 
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct VaultDepositEvent {
+    pub pool_id: u32,
+    pub user: Address,
+    pub amount: i128,
+    pub shares: i128,
+    pub share_price: i128,
+    pub timestamp: u64,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct VaultWithdrawEvent {
+    pub pool_id: u32,
+    pub user: Address,
+    pub amount: i128,
+    pub shares: i128,
+    pub share_price: i128,
+    pub timestamp: u64,
+}
+
 #[soroban_sdk::contracterror]
 #[derive(Copy, Clone, Debug, Eq, PartialEq, PartialOrd, Ord)]
 #[repr(u32)]

@@ -3,7 +3,7 @@
 use super::*;
 use rs_shared::{YieldSource, SHARE_PRICE_DENOM, YEAR_SECS};
 use soroban_sdk::{
-    testutils::{Address as _, Ledger},
+    testutils::{Address as _, Events as _, Ledger},
     token::StellarAssetClient,
     Address, Env, Symbol,
 };
@@ -504,4 +504,63 @@ fn test_pool_emergency_pause_mechanism() {
     // Deposit succeeds after unpausing
     let shares = client.vault_deposit(&pool_id, &user, &10_000);
     assert_eq!(shares, 10_000);
+}
+
+#[test]
+fn test_pool_enumeration_and_listing() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let contract_id = env.register(VaultPoolContract, ());
+    let client = VaultPoolContractClient::new(&env, &contract_id);
+
+    assert_eq!(client.get_pool_count(), 0);
+    assert_eq!(client.list_pools().len(), 0);
+
+    let admin = Address::generate(&env);
+    let token_admin = Address::generate(&env);
+    let token_contract = env.register_stellar_asset_contract_v2(token_admin.clone());
+    let token_address = token_contract.address();
+
+    let id0 = client.init(
+        &admin,
+        &token_address,
+        &Symbol::new(&env, "Pool0"),
+        &YieldSource::TBILL,
+        &500,
+        &0,
+    );
+    let id1 = client.init(
+        &admin,
+        &token_address,
+        &Symbol::new(&env, "Pool1"),
+        &YieldSource::MoneyMarketFund,
+        &1000,
+        &86400,
+    );
+
+    assert_eq!(client.get_pool_count(), 2);
+    let pools = client.list_pools();
+    assert_eq!(pools.len(), 2);
+    assert_eq!(pools.get(0).unwrap().pool_id, id0);
+    assert_eq!(pools.get(0).unwrap().name, Symbol::new(&env, "Pool0"));
+    assert_eq!(pools.get(1).unwrap().pool_id, id1);
+    assert_eq!(pools.get(1).unwrap().name, Symbol::new(&env, "Pool1"));
+}
+
+#[test]
+fn test_pool_deposit_withdraw_events() {
+    let (env, client, _token, user, pool_id, _admin) = setup_pool();
+
+    let shares = client.vault_deposit(&pool_id, &user, &10_000);
+    assert_eq!(shares, 10_000);
+
+    let dep_events = env.events().all();
+    assert!(!dep_events.is_empty());
+
+    let withdrawn = client.vault_withdraw(&pool_id, &user, &5_000);
+    assert_eq!(withdrawn, 5_000);
+
+    let w_events = env.events().all();
+    assert!(!w_events.is_empty());
 }
