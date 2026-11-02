@@ -100,6 +100,58 @@ fn test_session_expiry() {
 }
 
 #[test]
+fn test_vault_pool_conversion_and_apy() {
+    let now = chrono::Utc::now();
+    let pool = VaultPoolRecord {
+        id: Uuid::new_v4(),
+        onchain_pool_id: 1,
+        name: "NGN Vault".into(),
+        local_asset: "NGN".into(),
+        apy_bps: 1250,
+        min_lockup_secs: 86400,
+        total_deposits: 1_000_000,
+        total_shares: 100_000,
+        share_price: 10_000_000,
+        is_paused: false,
+        created_at: now,
+        updated_at: now,
+    };
+
+    let resp: VaultPoolResponse = pool.into();
+    assert_eq!(resp.onchain_pool_id, 1);
+    assert_eq!(resp.name, "NGN Vault");
+    assert_eq!(resp.apy_bps, 1250);
+    assert!((resp.apy_percent - 12.5).abs() < f64::EPSILON);
+    assert_eq!(resp.share_price, 10_000_000);
+    assert!(!resp.is_paused);
+}
+
+#[test]
+fn test_vault_position_serialization() {
+    let now = chrono::Utc::now();
+    let pos = VaultPositionResponse {
+        id: Uuid::new_v4(),
+        user_id: Uuid::new_v4(),
+        pool_id: Uuid::new_v4(),
+        pool_name: "KES Staking".into(),
+        local_asset: "KES".into(),
+        shares: 50_000,
+        deposited_amount: 500_000,
+        estimated_value: 525_000,
+        locked_until: now + chrono::Duration::days(7),
+        is_locked: true,
+        created_at: now,
+        updated_at: now,
+    };
+
+    let serialized = serde_json::to_string(&pos).unwrap();
+    let deserialized: VaultPositionResponse = serde_json::from_str(&serialized).unwrap();
+    assert_eq!(deserialized.shares, 50_000);
+    assert_eq!(deserialized.estimated_value, 525_000);
+    assert!(deserialized.is_locked);
+}
+
+#[test]
 fn test_app_error_messages() {
     use crate::error::AppError;
 
