@@ -148,6 +148,7 @@ The following areas represent the remaining ~35% of the platform. They are well-
 ### Backend
 
 - **[x] Savings service** — implemented `POST /savings/plans`, `GET /savings/plans`, `GET /savings/plans/:id`, `POST /savings/plans/:id/deposit`, `POST /savings/plans/:id/withdraw` in `remit-service` with database migration `002_savings_plans.sql`.
+- **[x] Vault pool service** — implemented `GET /vault/pools`, `GET /vault/pools/:id`, `GET /vault/positions`, `POST /vault/pools/:id/deposit`, `POST /vault/pools/:id/withdraw` with lockup checks, share mint/burn math, and database migration `003_vault_pools.sql`.
 - **[ ] Real anchor integration (Cowrie / NGN)** — replace the stub in `anchor-relayer` with a real SEP-24 deposit/withdrawal flow against the Cowrie sandbox API.
 - **[ ] KYC provider integration** — wire up SmileID or IdentityPass in `auth-service/src/providers/` behind the existing `POST /auth/kyc` endpoint.
 - **[ ] Notification service** — implement the NATS consumer in `notification-service` that listens for `RemittanceExecuted` events and sends an SMS via Africa's Talking.
@@ -156,7 +157,7 @@ The following areas represent the remaining ~35% of the platform. They are well-
 ### Frontend
 
 - **[ ] Beneficiary PWA** — build the `frontend/beneficiary-web` React app: balance view, transaction history, withdrawal request.
-- **[ ] Vault pools screen** — add a "Vault Pools" tab in the diaspora app: list pools, show APY, deposit/withdraw UI.
+- **[x] Vault pools screen** — add a "Vault Pools" tab in the diaspora app: list pools, show APY, deposit/withdraw UI, and timelock badge.
 - **[ ] Offline mode** — implement a service worker + IndexedDB sync queue in the diaspora app so the last-known balance is visible without a network connection.
 - **[ ] Localization** — add `react-i18next` to the diaspora app and provide translations for Hausa, Yoruba, and French.
 
