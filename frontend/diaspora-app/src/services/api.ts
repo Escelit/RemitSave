@@ -125,6 +125,46 @@ export interface LoginResponse {
   token: string;
 }
 
+export interface VaultPool {
+  id: string;
+  onchain_pool_id: number;
+  name: string;
+  local_asset: string;
+  apy_bps: number;
+  apy_percent: number;
+  min_lockup_secs: number;
+  total_deposits: number;
+  total_shares: number;
+  share_price: number;
+  is_paused: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface VaultPosition {
+  id: string;
+  user_id: string;
+  pool_id: string;
+  pool_name: string;
+  local_asset: string;
+  shares: number;
+  deposited_amount: number;
+  estimated_value: number;
+  locked_until: string;
+  is_locked: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface VaultActionResponse {
+  pool_id: string;
+  user_id: string;
+  shares: number;
+  deposited_amount: number;
+  estimated_value: number;
+  locked_until: string;
+}
+
 export const api = {
   login: (data: LoginRequest) =>
     request<LoginResponse>('POST', '/auth/login', data),
@@ -164,4 +204,19 @@ export const api = {
 
   withdrawFromPlan: (id: string, amount: number) =>
     request<PlanActionResult>('POST', `/savings/plans/${id}/withdraw`, { amount }),
+
+  listVaultPools: () =>
+    request<VaultPool[]>('GET', '/vault/pools'),
+
+  getVaultPool: (id: string) =>
+    request<VaultPool>('GET', `/vault/pools/${id}`),
+
+  listVaultPositions: () =>
+    request<VaultPosition[]>('GET', '/vault/positions'),
+
+  depositToVault: (poolId: string, amount: number) =>
+    request<VaultActionResponse>('POST', `/vault/pools/${poolId}/deposit`, { amount }),
+
+  withdrawFromVault: (poolId: string, shares: number) =>
+    request<VaultActionResponse>('POST', `/vault/pools/${poolId}/withdraw`, { shares }),
 };
