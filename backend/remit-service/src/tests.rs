@@ -146,3 +146,57 @@ fn test_savings_plan_validation_checks() {
     let local_asset = "".trim();
     assert!(local_asset.is_empty());
 }
+
+#[test]
+fn test_vault_shares_mint_calculation() {
+    let share_price = 10_000_000i128; // initial 1:1
+    let deposit_amount = 50_000i64;
+
+    let shares = (deposit_amount as i128 * 10_000_000i128 / share_price) as i64;
+    assert_eq!(shares, 50_000);
+
+    // After yield accrual, share_price increases to 1.10 (11_000_000)
+    let yield_share_price = 11_000_000i128;
+    let shares_after_yield = (deposit_amount as i128 * 10_000_000i128 / yield_share_price) as i64;
+    assert_eq!(shares_after_yield, 45_454); // fewer shares minted for same deposit
+}
+
+#[test]
+fn test_vault_withdraw_payout_with_accrued_yield() {
+    let user_shares = 10_000i64;
+    // Initial share price 10_000_000
+    let initial_payout = (user_shares as i128 * 10_000_000i128 / 10_000_000i128) as i64;
+    assert_eq!(initial_payout, 10_000);
+
+    // Share price after 10% yield
+    let yield_share_price = 11_000_000i128;
+    let payout = (user_shares as i128 * yield_share_price / 10_000_000i128) as i64;
+    assert_eq!(payout, 11_000); // 10% yield earned
+}
+
+#[test]
+fn test_vault_lockup_check() {
+    let now = chrono::Utc::now();
+    let lock_duration = chrono::Duration::seconds(86400); // 1 day
+    let locked_until = now + lock_duration;
+
+    // Check currently locked
+    assert!(now < locked_until);
+
+    // Check after lockup expiration
+    let future_time = now + chrono::Duration::seconds(86401);
+    assert!(future_time >= locked_until);
+}
+
+#[test]
+fn test_vault_validation_checks() {
+    let deposit_amount = 0i64;
+    assert!(deposit_amount <= 0);
+
+    let negative_deposit = -500i64;
+    assert!(negative_deposit <= 0);
+
+    let user_shares = 100i64;
+    let requested_withdraw = 150i64;
+    assert!(requested_withdraw > user_shares);
+}

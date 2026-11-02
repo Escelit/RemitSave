@@ -6,7 +6,10 @@ use axum::middleware::{self, Next};
 use axum::response::Response;
 use axum::routing::{get, post};
 use axum::{Extension, Json, Router};
-use backend_shared::{AppError, JwtClaims};
+use backend_shared::{
+    AppError, JwtClaims, VaultActionResponse, VaultDepositRequest, VaultPoolResponse,
+    VaultPositionResponse, VaultWithdrawRequest,
+};
 use bigdecimal::BigDecimal;
 use serde::{Deserialize, Serialize};
 use sqlx::PgPool;
@@ -302,6 +305,11 @@ async fn main() {
         .route("/savings/plans/{id}", get(get_plan))
         .route("/savings/plans/{id}/deposit", post(deposit_to_plan))
         .route("/savings/plans/{id}/withdraw", post(withdraw_from_plan))
+        .route("/vault/pools", get(list_vault_pools))
+        .route("/vault/pools/{id}", get(get_vault_pool))
+        .route("/vault/pools/{id}/deposit", post(deposit_to_vault_pool))
+        .route("/vault/pools/{id}/withdraw", post(withdraw_from_vault_pool))
+        .route("/vault/positions", get(list_vault_positions))
         .layer(middleware::from_fn_with_state(
             state.clone(),
             auth_middleware,
@@ -1017,4 +1025,435 @@ async fn auth_middleware(
 
     req.extensions_mut().insert(claims);
     Ok(next.run(req).await)
+}
+
+#[derive(Debug, sqlx::FromRow)]
+struct VaultPoolDbRow {
+    id: Uuid,
+    onchain_pool_id: i32,
+    name: String,
+    local_asset: String,
+    apy_bps: i32,
+    min_lockup_secs: i64,
+    total_deposits: BigDecimal,
+    total_shares: BigDecimal,
+    share_price: BigDecimal,
+    is_paused: bool,
+    created_at: chrono::DateTime<chrono::Utc>,
+    updated_at: chrono::DateTime<chrono::Utc>,
+}
+
+impl From<VaultPoolDbRow> for VaultPoolResponse {
+    fn from(r: VaultPoolDbRow) -> Self {
+        fn bd_to_i64(bd: &BigDecimal) -> i64 {
+            bd.to_string().parse().unwrap_or(0)
+        }
+        let total_deposits = bd_to_i64(&r.total_deposits);
+        let total_shares = bd_to_i64(&r.total_shares);
+        let share_price = bd_to_i64(&r.share_price);
+        VaultPoolResponse {
+            id: r.id,
+            onchain_pool_id: r.onchain_pool_id,
+            name: r.name,
+            local_asset: r.local_asset,
+            apy_bps: r.apy_bps,
+            apy_percent: (r.apy_bps as f64) / 100.0,
+            min_lockup_secs: r.min_lockup_secs,
+            total_deposits,
+            total_shares,
+            share_price,
+            is_paused: r.is_paused,
+            created_at: r.created_at,
+            updated_at: r.updated_at,
+        }
+    }
+}
+
+#[derive(Debug, sqlx::FromRow)]
+struct VaultPositionDbRow {
+    id: Uuid,
+    user_id: Uuid,
+    pool_id: Uuid,
+    pool_name: String,
+    local_asset: String,
+    shares: BigDecimal,
+    deposited_amount: BigDecimal,
+    share_price: BigDecimal,
+    locked_until: chrono::DateTime<chrono::Utc>,
+    created_at: chrono::DateTime<chrono::Utc>,
+    updated_at: chrono::DateTime<chrono::Utc>,
+}
+
+impl From<VaultPositionDbRow> for VaultPositionResponse {
+    fn from(r: VaultPositionDbRow) -> Self {
+        fn bd_to_i64(bd: &BigDecimal) -> i64 {
+            bd.to_string().parse().unwrap_or(0)
+        }
+        let shares = bd_to_i64(&r.shares);
+        let deposited_amount = bd_to_i64(&r.deposited_amount);
+        let share_price = bd_to_i64(&r.share_price);
+        let estimated_value = if share_price > 0 {
+            (shares as i128 * share_price as i128 / 10_000_000i128) as i64
+        } else {
+            deposited_amount
+        };
+        let is_locked = chrono::Utc::now() < r.locked_until;
+
+        VaultPositionResponse {
+            id: r.id,
+            user_id: r.user_id,
+            pool_id: r.pool_id,
+            pool_name: r.pool_name,
+            local_asset: r.local_asset,
+            shares,
+            deposited_amount,
+            estimated_value,
+            locked_until: r.locked_until,
+            is_locked,
+            created_at: r.created_at,
+            updated_at: r.updated_at,
+        }
+    }
+}
+
+async fn list_vault_pools(
+    State(state): State<Arc<AppState>>,
+) -> Result<Json<Vec<VaultPoolResponse>>, AppError> {
+    let rows = sqlx::query_as::<_, VaultPoolDbRow>(
+        r#"
+        SELECT id, onchain_pool_id, name, local_asset, apy_bps, min_lockup_secs,
+               total_deposits, total_shares, share_price, is_paused, created_at, updated_at
+        FROM vault_pools
+        ORDER BY onchain_pool_id ASC
+        "#,
+    )
+    .fetch_all(&state.db)
+    .await?;
+
+    Ok(Json(rows.into_iter().map(Into::into).collect()))
+}
+
+async fn get_vault_pool(
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<Uuid>,
+) -> Result<Json<VaultPoolResponse>, AppError> {
+    let row = sqlx::query_as::<_, VaultPoolDbRow>(
+        r#"
+        SELECT id, onchain_pool_id, name, local_asset, apy_bps, min_lockup_secs,
+               total_deposits, total_shares, share_price, is_paused, created_at, updated_at
+        FROM vault_pools
+        WHERE id = $1
+        "#,
+    )
+    .bind(id)
+    .fetch_optional(&state.db)
+    .await?
+    .ok_or(AppError::NotFound("Vault pool not found".into()))?;
+
+    Ok(Json(row.into()))
+}
+
+async fn list_vault_positions(
+    State(state): State<Arc<AppState>>,
+    Extension(claims): Extension<JwtClaims>,
+) -> Result<Json<Vec<VaultPositionResponse>>, AppError> {
+    let user_id = user_id_from_claims(&claims)?;
+
+    let rows = sqlx::query_as::<_, VaultPositionDbRow>(
+        r#"
+        SELECT p.id, p.user_id, p.pool_id, vp.name as pool_name, vp.local_asset,
+               p.shares, p.deposited_amount, vp.share_price, p.locked_until,
+               p.created_at, p.updated_at
+        FROM vault_positions p
+        JOIN vault_pools vp ON p.pool_id = vp.id
+        WHERE p.user_id = $1
+        ORDER BY p.created_at DESC
+        "#,
+    )
+    .bind(user_id)
+    .fetch_all(&state.db)
+    .await?;
+
+    Ok(Json(rows.into_iter().map(Into::into).collect()))
+}
+
+async fn deposit_to_vault_pool(
+    State(state): State<Arc<AppState>>,
+    Extension(claims): Extension<JwtClaims>,
+    Path(id): Path<Uuid>,
+    Json(body): Json<VaultDepositRequest>,
+) -> Result<Json<VaultActionResponse>, AppError> {
+    let user_id = user_id_from_claims(&claims)?;
+
+    if body.amount <= 0 {
+        return Err(AppError::BadRequest(
+            "Deposit amount must be positive".into(),
+        ));
+    }
+
+    let pool = sqlx::query_as::<_, VaultPoolDbRow>(
+        r#"
+        SELECT id, onchain_pool_id, name, local_asset, apy_bps, min_lockup_secs,
+               total_deposits, total_shares, share_price, is_paused, created_at, updated_at
+        FROM vault_pools
+        WHERE id = $1
+        "#,
+    )
+    .bind(id)
+    .fetch_optional(&state.db)
+    .await?
+    .ok_or(AppError::NotFound("Vault pool not found".into()))?;
+
+    if pool.is_paused {
+        return Err(AppError::BadRequest(
+            "Vault pool is currently paused".into(),
+        ));
+    }
+
+    let share_price: i64 = pool.share_price.to_string().parse().unwrap_or(10_000_000);
+    if share_price <= 0 {
+        return Err(AppError::Internal("Invalid pool share price".into()));
+    }
+
+    let new_shares = (body.amount as i128)
+        .checked_mul(10_000_000)
+        .ok_or_else(|| AppError::Internal("Calculation overflow".into()))?
+        .checked_div(share_price as i128)
+        .ok_or_else(|| AppError::Internal("Calculation overflow".into()))?
+        as i64;
+
+    if new_shares <= 0 {
+        return Err(AppError::BadRequest(
+            "Deposit amount is too small to mint shares".into(),
+        ));
+    }
+
+    let now = chrono::Utc::now();
+    let lock_duration = chrono::Duration::seconds(pool.min_lockup_secs);
+    let new_lock_until = now + lock_duration;
+
+    let existing_pos =
+        sqlx::query_as::<_, (BigDecimal, BigDecimal, chrono::DateTime<chrono::Utc>)>(
+            r#"
+        SELECT shares, deposited_amount, locked_until
+        FROM vault_positions
+        WHERE user_id = $1 AND pool_id = $2
+        "#,
+        )
+        .bind(user_id)
+        .bind(id)
+        .fetch_optional(&state.db)
+        .await?;
+
+    let (final_shares, final_deposited, final_locked) = match existing_pos {
+        Some((curr_shares, curr_dep, curr_lock)) => {
+            let s: i64 = curr_shares.to_string().parse().unwrap_or(0);
+            let d: i64 = curr_dep.to_string().parse().unwrap_or(0);
+            let updated_shares = s
+                .checked_add(new_shares)
+                .ok_or_else(|| AppError::Internal("Overflow".into()))?;
+            let updated_dep = d
+                .checked_add(body.amount)
+                .ok_or_else(|| AppError::Internal("Overflow".into()))?;
+            let lock = if new_lock_until > curr_lock {
+                new_lock_until
+            } else {
+                curr_lock
+            };
+
+            sqlx::query(
+                r#"
+                UPDATE vault_positions
+                SET shares = $1, deposited_amount = $2, locked_until = $3, updated_at = $4
+                WHERE user_id = $5 AND pool_id = $6
+                "#,
+            )
+            .bind(BigDecimal::from(updated_shares))
+            .bind(BigDecimal::from(updated_dep))
+            .bind(lock)
+            .bind(now)
+            .bind(user_id)
+            .bind(id)
+            .execute(&state.db)
+            .await?;
+
+            (updated_shares, updated_dep, lock)
+        }
+        None => {
+            sqlx::query(
+                r#"
+                INSERT INTO vault_positions (user_id, pool_id, shares, deposited_amount, locked_until, created_at, updated_at)
+                VALUES ($1, $2, $3, $4, $5, $6, $6)
+                "#,
+            )
+            .bind(user_id)
+            .bind(id)
+            .bind(BigDecimal::from(new_shares))
+            .bind(BigDecimal::from(body.amount))
+            .bind(new_lock_until)
+            .bind(now)
+            .execute(&state.db)
+            .await?;
+
+            (new_shares, body.amount, new_lock_until)
+        }
+    };
+
+    let current_deposits: i64 = pool.total_deposits.to_string().parse().unwrap_or(0);
+    let current_total_shares: i64 = pool.total_shares.to_string().parse().unwrap_or(0);
+    sqlx::query(
+        r#"
+        UPDATE vault_pools
+        SET total_deposits = $1, total_shares = $2, updated_at = $3
+        WHERE id = $4
+        "#,
+    )
+    .bind(BigDecimal::from(current_deposits + body.amount))
+    .bind(BigDecimal::from(current_total_shares + new_shares))
+    .bind(now)
+    .bind(id)
+    .execute(&state.db)
+    .await?;
+
+    let estimated_value = (final_shares as i128 * share_price as i128 / 10_000_000i128) as i64;
+
+    Ok(Json(VaultActionResponse {
+        pool_id: id,
+        user_id,
+        shares: final_shares,
+        deposited_amount: final_deposited,
+        estimated_value,
+        locked_until: final_locked,
+    }))
+}
+
+async fn withdraw_from_vault_pool(
+    State(state): State<Arc<AppState>>,
+    Extension(claims): Extension<JwtClaims>,
+    Path(id): Path<Uuid>,
+    Json(body): Json<VaultWithdrawRequest>,
+) -> Result<Json<VaultActionResponse>, AppError> {
+    let user_id = user_id_from_claims(&claims)?;
+
+    if body.shares <= 0 {
+        return Err(AppError::BadRequest(
+            "Withdraw shares must be positive".into(),
+        ));
+    }
+
+    let pool = sqlx::query_as::<_, VaultPoolDbRow>(
+        r#"
+        SELECT id, onchain_pool_id, name, local_asset, apy_bps, min_lockup_secs,
+               total_deposits, total_shares, share_price, is_paused, created_at, updated_at
+        FROM vault_pools
+        WHERE id = $1
+        "#,
+    )
+    .bind(id)
+    .fetch_optional(&state.db)
+    .await?
+    .ok_or(AppError::NotFound("Vault pool not found".into()))?;
+
+    if pool.is_paused {
+        return Err(AppError::BadRequest(
+            "Vault pool is currently paused".into(),
+        ));
+    }
+
+    let pos = sqlx::query_as::<_, (BigDecimal, BigDecimal, chrono::DateTime<chrono::Utc>)>(
+        r#"
+        SELECT shares, deposited_amount, locked_until
+        FROM vault_positions
+        WHERE user_id = $1 AND pool_id = $2
+        "#,
+    )
+    .bind(user_id)
+    .bind(id)
+    .fetch_optional(&state.db)
+    .await?
+    .ok_or(AppError::NotFound("No position found in this pool".into()))?;
+
+    let user_shares: i64 = pos.0.to_string().parse().unwrap_or(0);
+    let user_deposited: i64 = pos.1.to_string().parse().unwrap_or(0);
+    let locked_until = pos.2;
+
+    if body.shares > user_shares {
+        return Err(AppError::BadRequest("Insufficient shares balance".into()));
+    }
+
+    let now = chrono::Utc::now();
+    if now < locked_until {
+        return Err(AppError::BadRequest(
+            "Vault lockup period is still active".into(),
+        ));
+    }
+
+    let share_price: i64 = pool.share_price.to_string().parse().unwrap_or(10_000_000);
+    let payout_amount = (body.shares as i128)
+        .checked_mul(share_price as i128)
+        .ok_or_else(|| AppError::Internal("Calculation overflow".into()))?
+        .checked_div(10_000_000)
+        .ok_or_else(|| AppError::Internal("Calculation overflow".into()))?
+        as i64;
+
+    let pool_deposits: i64 = pool.total_deposits.to_string().parse().unwrap_or(0);
+    if payout_amount > pool_deposits {
+        return Err(AppError::BadRequest("Insufficient pool liquidity".into()));
+    }
+
+    let remaining_shares = user_shares - body.shares;
+    let remaining_deposited = user_deposited.saturating_sub(payout_amount);
+
+    if remaining_shares == 0 {
+        sqlx::query("DELETE FROM vault_positions WHERE user_id = $1 AND pool_id = $2")
+            .bind(user_id)
+            .bind(id)
+            .execute(&state.db)
+            .await?;
+    } else {
+        sqlx::query(
+            r#"
+            UPDATE vault_positions
+            SET shares = $1, deposited_amount = $2, updated_at = $3
+            WHERE user_id = $4 AND pool_id = $5
+            "#,
+        )
+        .bind(BigDecimal::from(remaining_shares))
+        .bind(BigDecimal::from(remaining_deposited))
+        .bind(now)
+        .bind(user_id)
+        .bind(id)
+        .execute(&state.db)
+        .await?;
+    }
+
+    let pool_total_shares: i64 = pool.total_shares.to_string().parse().unwrap_or(0);
+    sqlx::query(
+        r#"
+        UPDATE vault_pools
+        SET total_deposits = $1, total_shares = $2, updated_at = $3
+        WHERE id = $4
+        "#,
+    )
+    .bind(BigDecimal::from(
+        pool_deposits.saturating_sub(payout_amount),
+    ))
+    .bind(BigDecimal::from(
+        pool_total_shares.saturating_sub(body.shares),
+    ))
+    .bind(now)
+    .bind(id)
+    .execute(&state.db)
+    .await?;
+
+    let estimated_value = (remaining_shares as i128 * share_price as i128 / 10_000_000i128) as i64;
+
+    Ok(Json(VaultActionResponse {
+        pool_id: id,
+        user_id,
+        shares: remaining_shares,
+        deposited_amount: remaining_deposited,
+        estimated_value,
+        locked_until,
+    }))
 }
