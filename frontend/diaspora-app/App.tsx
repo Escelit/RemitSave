@@ -7,10 +7,19 @@ import PhoneAuthScreen from './src/screens/PhoneAuthScreen';
 import WalletCreationScreen from './src/screens/WalletCreationScreen';
 import SendMoneyScreen from './src/screens/SendMoneyScreen';
 import SavingsDashboardScreen from './src/screens/SavingsDashboardScreen';
+import VaultPoolsScreen from './src/screens/VaultPoolsScreen';
 
-type Screen = 'loading' | 'welcome' | 'phoneAuth' | 'walletCreation' | 'home' | 'sendMoney' | 'savingsDashboard';
+type Screen = 'loading' | 'welcome' | 'phoneAuth' | 'walletCreation' | 'home' | 'sendMoney' | 'savingsDashboard' | 'vaultPools';
 
-function HomeScreen({ onSendMoney, onSavingsDashboard }: { onSendMoney: () => void; onSavingsDashboard: () => void }) {
+function HomeScreen({
+  onSendMoney,
+  onSavingsDashboard,
+  onVaultPools,
+}: {
+  onSendMoney: () => void;
+  onSavingsDashboard: () => void;
+  onVaultPools: () => void;
+}) {
   const { wallet } = useAuth();
   return (
     <View style={styles.homeContainer}>
@@ -37,6 +46,12 @@ function HomeScreen({ onSendMoney, onSavingsDashboard }: { onSendMoney: () => vo
           <Text style={styles.actionIcon}>📊</Text>
           <Text style={styles.actionLabel}>Savings</Text>
           <Text style={styles.actionDesc}>View your goals</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity style={styles.actionButton} onPress={onVaultPools}>
+          <Text style={styles.actionIcon}>🏦</Text>
+          <Text style={styles.actionLabel}>Vault Pools</Text>
+          <Text style={styles.actionDesc}>Earn yield APY</Text>
         </TouchableOpacity>
       </View>
     </View>
@@ -95,6 +110,7 @@ function OnboardingFlow() {
         <HomeScreen
           onSendMoney={() => setScreen('sendMoney')}
           onSavingsDashboard={() => setScreen('savingsDashboard')}
+          onVaultPools={() => setScreen('vaultPools')}
         />
       )}
       {screen === 'sendMoney' && (
@@ -106,6 +122,11 @@ function OnboardingFlow() {
         <SavingsDashboardScreen
           onBack={() => setScreen('home')}
           onSendMoney={() => setScreen('sendMoney')}
+        />
+      )}
+      {screen === 'vaultPools' && (
+        <VaultPoolsScreen
+          onBack={() => setScreen('home')}
         />
       )}
       <StatusBar style="light" />
