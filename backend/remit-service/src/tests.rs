@@ -207,8 +207,13 @@ fn test_user_stellar_address_validation_in_remittance() {
     assert!(unlinked_address.is_none());
 
     let invalid_address = Some("invalid_key".to_string());
-    assert!(!backend_shared::is_valid_stellar_address(invalid_address.as_deref().unwrap()));
+    assert!(!backend_shared::is_valid_stellar_address(
+        invalid_address.as_deref().unwrap()
+    ));
 
-    let valid_address = Some("GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5".to_string());
-    assert!(backend_shared::is_valid_stellar_address(valid_address.as_deref().unwrap()));
+    let valid_address =
+        Some("GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5".to_string());
+    assert!(backend_shared::is_valid_stellar_address(
+        valid_address.as_deref().unwrap()
+    ));
 }

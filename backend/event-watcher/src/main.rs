@@ -285,7 +285,9 @@ fn parse_address(val: &ScVal) -> Option<String> {
     }
 }
 
-async fn trigger_anchor_disbursement(ev: &RemittanceExecuted) -> Result<String, Box<dyn std::error::Error>> {
+async fn trigger_anchor_disbursement(
+    ev: &RemittanceExecuted,
+) -> Result<String, Box<dyn std::error::Error>> {
     let anchor_reference = format!("ANCHOR-PAY-{}", uuid::Uuid::new_v4());
     tracing::info!(
         "Anchor Relayer: Initiating local fiat/mobile money payout for beneficiary {} | amount: {} {} | anchor ref: {}",
@@ -304,12 +306,11 @@ async fn dispatch_remittance_notifications(
     ev: &RemittanceExecuted,
     anchor_ref: &str,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let user_info = sqlx::query_as::<_, (String, String)>(
-        "SELECT email, phone FROM users WHERE id = $1"
-    )
-    .bind(user_id)
-    .fetch_optional(pool)
-    .await?;
+    let user_info =
+        sqlx::query_as::<_, (String, String)>("SELECT email, phone FROM users WHERE id = $1")
+            .bind(user_id)
+            .fetch_optional(pool)
+            .await?;
 
     if let Some((email, phone)) = user_info {
         tracing::info!(

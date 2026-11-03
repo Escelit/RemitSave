@@ -50,14 +50,16 @@ async fn main() {
         .allow_origin(Any)
         .allow_headers(Any);
 
-    let auth_routes =
-        Router::new()
-            .route("/auth/me", get(me).put(update_me))
-            .route("/auth/stellar-address", post(link_stellar_address).put(link_stellar_address))
-            .layer(middleware::from_fn_with_state(
-                state.clone(),
-                auth_middleware,
-            ));
+    let auth_routes = Router::new()
+        .route("/auth/me", get(me).put(update_me))
+        .route(
+            "/auth/stellar-address",
+            post(link_stellar_address).put(link_stellar_address),
+        )
+        .layer(middleware::from_fn_with_state(
+            state.clone(),
+            auth_middleware,
+        ));
 
     let app = Router::new()
         .route("/health", get(health))
