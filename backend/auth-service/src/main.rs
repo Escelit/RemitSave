@@ -52,7 +52,8 @@ async fn main() {
 
     let auth_routes =
         Router::new()
-            .route("/auth/me", get(me))
+            .route("/auth/me", get(me).put(update_me))
+            .route("/auth/stellar-address", post(link_stellar_address).put(link_stellar_address))
             .layer(middleware::from_fn_with_state(
                 state.clone(),
                 auth_middleware,
@@ -100,6 +101,14 @@ async fn register(
         )));
     }
 
+    if let Some(ref addr) = req.stellar_address {
+        if !backend_shared::is_valid_stellar_address(addr) {
+            return Err(AppError::BadRequest(
+                "Invalid Stellar public address. Must start with 'G' and be 56 characters.".into(),
+            ));
+        }
+    }
+
     let existing = sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM users WHERE email = $1")
         .bind(&req.email)
         .fetch_one(&state.db)
@@ -119,8 +128,8 @@ async fn register(
 
     sqlx::query(
         r#"
-        INSERT INTO users (id, email, phone, country, password_hash, kyc_level, created_at, last_active)
-        VALUES ($1, $2, $3, $4, $5, 0, $6, $6)
+        INSERT INTO users (id, email, phone, country, password_hash, kyc_level, stellar_address, created_at, last_active)
+        VALUES ($1, $2, $3, $4, $5, 0, $6, $7, $7)
         "#,
     )
     .bind(user_id)
@@ -128,6 +137,7 @@ async fn register(
     .bind(&req.phone)
     .bind(&req.country)
     .bind(&password_hash)
+    .bind(&req.stellar_address)
     .bind(now)
     .execute(&state.db)
     .await?;
@@ -140,7 +150,7 @@ async fn register(
         phone: req.phone,
         country: req.country,
         kyc_level: 0,
-        stellar_address: None,
+        stellar_address: req.stellar_address,
         created_at: now,
         last_active: now,
     };
@@ -234,6 +244,133 @@ async fn me(
     .fetch_optional(&state.db)
     .await?
     .ok_or(AppError::NotFound("User not found".into()))?;
+
+    Ok(Json(user.into()))
+}
+
+async fn link_stellar_address(
+    State(state): State<Arc<AppState>>,
+    req: Request,
+) -> Result<Json<UserPublic>, AppError> {
+    let claims = req
+        .extensions()
+        .get::<JwtClaims>()
+        .cloned()
+        .ok_or(AppError::Unauthorized("No valid JWT claims found".into()))?;
+    let user_id: uuid::Uuid = claims
+        .sub
+        .parse()
+        .map_err(|_| AppError::Unauthorized("Invalid token claims".into()))?;
+
+    let bytes = axum::body::to_bytes(req.into_body(), 1024 * 64)
+        .await
+        .map_err(|e| AppError::BadRequest(format!("Failed to read body: {e}")))?;
+    let body: backend_shared::LinkStellarAddressRequest = serde_json::from_slice(&bytes)
+        .map_err(|e| AppError::BadRequest(format!("Invalid JSON payload: {e}")))?;
+
+    if !backend_shared::is_valid_stellar_address(&body.stellar_address) {
+        return Err(AppError::BadRequest(
+            "Invalid Stellar public address. Must start with 'G' and be 56 characters.".into(),
+        ));
+    }
+
+    let now = chrono::Utc::now();
+    let rows_affected = sqlx::query(
+        r#"
+        UPDATE users
+        SET stellar_address = $1, last_active = $2
+        WHERE id = $3
+        "#,
+    )
+    .bind(&body.stellar_address)
+    .bind(now)
+    .bind(user_id)
+    .execute(&state.db)
+    .await?
+    .rows_affected();
+
+    if rows_affected == 0 {
+        return Err(AppError::NotFound("User not found".into()));
+    }
+
+    let user = sqlx::query_as::<_, backend_shared::User>(
+        r#"
+        SELECT id, email, phone, country, password_hash, kyc_level,
+               stellar_address, created_at, last_active
+        FROM users WHERE id = $1
+        "#,
+    )
+    .bind(user_id)
+    .fetch_one(&state.db)
+    .await?;
+
+    Ok(Json(user.into()))
+}
+
+async fn update_me(
+    State(state): State<Arc<AppState>>,
+    req: Request,
+) -> Result<Json<UserPublic>, AppError> {
+    let claims = req
+        .extensions()
+        .get::<JwtClaims>()
+        .cloned()
+        .ok_or(AppError::Unauthorized("No valid JWT claims found".into()))?;
+    let user_id: uuid::Uuid = claims
+        .sub
+        .parse()
+        .map_err(|_| AppError::Unauthorized("Invalid token claims".into()))?;
+
+    let bytes = axum::body::to_bytes(req.into_body(), 1024 * 64)
+        .await
+        .map_err(|e| AppError::BadRequest(format!("Failed to read body: {e}")))?;
+    let body: backend_shared::UpdateProfileRequest = serde_json::from_slice(&bytes)
+        .map_err(|e| AppError::BadRequest(format!("Invalid JSON payload: {e}")))?;
+
+    if let Some(ref addr) = body.stellar_address {
+        if !backend_shared::is_valid_stellar_address(addr) {
+            return Err(AppError::BadRequest(
+                "Invalid Stellar public address. Must start with 'G' and be 56 characters.".into(),
+            ));
+        }
+    }
+
+    let now = chrono::Utc::now();
+    let mut user = sqlx::query_as::<_, backend_shared::User>(
+        r#"
+        SELECT id, email, phone, country, password_hash, kyc_level,
+               stellar_address, created_at, last_active
+        FROM users WHERE id = $1
+        "#,
+    )
+    .bind(user_id)
+    .fetch_optional(&state.db)
+    .await?
+    .ok_or(AppError::NotFound("User not found".into()))?;
+
+    let phone = body.phone.unwrap_or(user.phone);
+    let country = body.country.unwrap_or(user.country);
+    let stellar_address = body.stellar_address.or(user.stellar_address);
+
+    sqlx::query(
+        r#"
+        UPDATE users
+        SET phone = $1, country = $2, stellar_address = $3, last_active = $4
+        WHERE id = $5
+        "#,
+    )
+    .bind(&phone)
+    .bind(&country)
+    .bind(&stellar_address)
+    .bind(now)
+    .bind(user_id)
+    .execute(&state.db)
+    .await?;
+
+    user.phone = phone;
+    user.country = country;
+    user.stellar_address = stellar_address;
+    user.last_active = now;
 
     Ok(Json(user.into()))
 }

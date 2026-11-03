@@ -31,6 +31,7 @@ fn test_register_request_validation() {
         phone: "+2348000000000".into(),
         country: "KE".into(),
         password: "securepassword123".into(),
+        stellar_address: None,
     };
     assert!(!req.email.is_empty());
     assert!(!req.password.is_empty());

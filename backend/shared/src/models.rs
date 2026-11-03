@@ -34,12 +34,30 @@ pub struct Session {
     pub created_at: DateTime<Utc>,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RegisterRequest {
     pub email: String,
     pub phone: String,
     pub country: String,
     pub password: String,
+    #[serde(default)]
+    pub stellar_address: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LinkStellarAddressRequest {
+    pub stellar_address: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UpdateProfileRequest {
+    pub phone: Option<String>,
+    pub country: Option<String>,
+    pub stellar_address: Option<String>,
+}
+
+pub fn is_valid_stellar_address(addr: &str) -> bool {
+    addr.len() == 56 && addr.starts_with('G') && addr.chars().all(|c| c.is_ascii_alphanumeric())
 }
 
 #[derive(Debug, Serialize, Deserialize)]

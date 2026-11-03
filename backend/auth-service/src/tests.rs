@@ -8,6 +8,7 @@ fn test_register_validation_empty_email() {
         phone: "+234".into(),
         country: "NG".into(),
         password: "password123".into(),
+        stellar_address: None,
     };
     assert!(req.email.is_empty());
     assert!(req.password.len() >= 8);
@@ -20,6 +21,7 @@ fn test_register_validation_short_password() {
         phone: "+234".into(),
         country: "NG".into(),
         password: "short".into(),
+        stellar_address: None,
     };
     assert!(req.password.len() < 8);
 }
@@ -32,6 +34,7 @@ fn test_register_validation_invalid_country() {
         phone: "+234".into(),
         country: "FR".into(),
         password: "password123".into(),
+        stellar_address: None,
     };
     assert!(!valid.contains(&req.country.as_str()));
 }
@@ -45,6 +48,7 @@ fn test_register_validation_valid_country() {
             phone: "+234".into(),
             country: country.to_string(),
             password: "password123".into(),
+            stellar_address: None,
         };
         assert!(valid.contains(&req.country.as_str()));
     }
@@ -146,4 +150,38 @@ fn test_login_response_payload() {
     assert_eq!(res.user.email, "user@example.com");
     assert_eq!(res.token, token);
     assert_eq!(res.user.kyc_level, 1);
+}
+
+#[test]
+fn test_stellar_address_validation() {
+    let valid_address = "GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5";
+    assert!(backend_shared::is_valid_stellar_address(valid_address));
+
+    // Invalid prefix
+    let invalid_prefix = "CBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5";
+    assert!(!backend_shared::is_valid_stellar_address(invalid_prefix));
+
+    // Too short
+    let too_short = "GBBD47IF6LWK7P7MDEV";
+    assert!(!backend_shared::is_valid_stellar_address(too_short));
+
+    // Empty
+    assert!(!backend_shared::is_valid_stellar_address(""));
+}
+
+#[test]
+fn test_register_request_with_stellar_address() {
+    let valid_addr = "GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5";
+    let req = backend_shared::RegisterRequest {
+        email: "diaspora@example.com".into(),
+        phone: "+447911123456".into(),
+        country: "NG".into(),
+        password: "SecurePassword123!".into(),
+        stellar_address: Some(valid_addr.into()),
+    };
+
+    assert_eq!(req.stellar_address.as_deref(), Some(valid_addr));
+    let json = serde_json::to_string(&req).unwrap();
+    let deserialized: backend_shared::RegisterRequest = serde_json::from_str(&json).unwrap();
+    assert_eq!(deserialized.stellar_address.as_deref(), Some(valid_addr));
 }
