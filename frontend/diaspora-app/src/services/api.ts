@@ -1,4 +1,9 @@
-const API_BASE = 'http://localhost:3002';
+const getBaseUrl = (path: string): string => {
+  if (path.startsWith('/auth')) {
+    return process.env.EXPO_PUBLIC_AUTH_API_BASE || 'http://localhost:3001';
+  }
+  return process.env.EXPO_PUBLIC_REMIT_API_BASE || 'http://localhost:3002';
+};
 
 let authToken: string | null = null;
 
@@ -6,18 +11,23 @@ export function setAuthToken(token: string | null) {
   authToken = token;
 }
 
+export function getAuthToken(): string | null {
+  return authToken;
+}
+
 async function request<T>(
   method: string,
   path: string,
   body?: unknown,
 ): Promise<T> {
+  const baseUrl = getBaseUrl(path);
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
   };
   if (authToken) {
     headers['Authorization'] = `Bearer ${authToken}`;
   }
-  const res = await fetch(`${API_BASE}${path}`, {
+  const res = await fetch(`${baseUrl}${path}`, {
     method,
     headers,
     body: body ? JSON.stringify(body) : undefined,
@@ -106,22 +116,37 @@ export interface PlanActionResult {
   status: string;
 }
 
+export interface RegisterRequest {
+  email: string;
+  phone: string;
+  country: string;
+  password: string;
+  stellar_address?: string;
+}
+
+export interface UserPublic {
+  id: string;
+  email: string;
+  phone: string;
+  country: string;
+  kyc_level: number;
+  stellar_address?: string | null;
+  created_at: string;
+  last_active: string;
+}
+
+export interface RegisterResponse {
+  user: UserPublic;
+  token: string;
+}
+
 export interface LoginRequest {
   email: string;
   password: string;
 }
 
 export interface LoginResponse {
-  user: {
-    id: string;
-    email: string;
-    phone: string;
-    country: string;
-    kyc_level: number;
-    stellar_address?: string | null;
-    created_at: string;
-    last_active: string;
-  };
+  user: UserPublic;
   token: string;
 }
 
@@ -166,8 +191,17 @@ export interface VaultActionResponse {
 }
 
 export const api = {
+  register: (data: RegisterRequest) =>
+    request<RegisterResponse>('POST', '/auth/register', data),
+
   login: (data: LoginRequest) =>
     request<LoginResponse>('POST', '/auth/login', data),
+
+  getMe: () =>
+    request<UserPublic>('GET', '/auth/me'),
+
+  linkStellarAddress: (stellarAddress: string) =>
+    request<UserPublic>('PUT', '/auth/stellar-address', { stellar_address: stellarAddress }),
 
   createRule: (data: CreateRuleRequest) =>
     request<RemittanceRule>('POST', '/remit/rules', data),

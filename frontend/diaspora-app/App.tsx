@@ -87,8 +87,8 @@ function OnboardingFlow() {
       )}
       {screen === 'phoneAuth' && (
         <PhoneAuthScreen
-          onVerified={(phone) => {
-            onboard(phone);
+          onVerified={async (phone) => {
+            await onboard(phone);
             setScreen('walletCreation');
           }}
           onBack={() => setScreen('welcome')}
