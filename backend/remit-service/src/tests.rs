@@ -200,3 +200,15 @@ fn test_vault_validation_checks() {
     let requested_withdraw = 150i64;
     assert!(requested_withdraw > user_shares);
 }
+
+#[test]
+fn test_user_stellar_address_validation_in_remittance() {
+    let unlinked_address: Option<String> = None;
+    assert!(unlinked_address.is_none());
+
+    let invalid_address = Some("invalid_key".to_string());
+    assert!(!backend_shared::is_valid_stellar_address(invalid_address.as_deref().unwrap()));
+
+    let valid_address = Some("GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5".to_string());
+    assert!(backend_shared::is_valid_stellar_address(valid_address.as_deref().unwrap()));
+}
