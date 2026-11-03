@@ -42,6 +42,61 @@ services:
     volumes:
       - stellar_data:/opt/stellar
 
+  auth-service:
+    build:
+      context: ./backend
+      dockerfile: auth-service/Dockerfile
+    container_name: remitsave-auth-service
+    environment:
+      DATABASE_URL: postgres://remitsave:remitsave_dev@postgres:5432/remitsave
+      JWT_SECRET: remitsave-dev-secret-do-not-use-in-prod
+    ports:
+      - "3001:3001"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  remit-service:
+    build:
+      context: ./backend
+      dockerfile: remit-service/Dockerfile
+    container_name: remitsave-remit-service
+    environment:
+      DATABASE_URL: postgres://remitsave:remitsave_dev@postgres:5432/remitsave
+      JWT_SECRET: remitsave-dev-secret-do-not-use-in-prod
+      SOROBAN_RPC_URL: http://stellar:8000/soroban/rpc
+      REMIT_CONTRACT_ID: CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
+    ports:
+      - "3002:3002"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  event-watcher:
+    build:
+      context: ./backend
+      dockerfile: event-watcher/Dockerfile
+    container_name: remitsave-event-watcher
+    environment:
+      DATABASE_URL: postgres://remitsave:remitsave_dev@postgres:5432/remitsave
+      SOROBAN_RPC_URL: http://stellar:8000/soroban/rpc
+      REMIT_CONTRACT_ID: CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
+      POLL_INTERVAL_SECS: 5
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  gateway:
+    image: nginx:alpine
+    container_name: remitsave-gateway
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./gateway/nginx.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      - auth-service
+      - remit-service
+
 volumes:
   postgres_data:
   redis_data:
