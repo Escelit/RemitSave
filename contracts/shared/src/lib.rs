@@ -113,6 +113,7 @@ pub enum DataKey {
     Anchor(Address),
     ProposedAdmin,
     IsPaused,
+    VaultContract,
     // Vault-pool specific keys
     PoolLastUpdated(u32),
     PoolUserBalance(Address, u32),

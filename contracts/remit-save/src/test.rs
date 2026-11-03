@@ -483,3 +483,40 @@ fn test_goal_completion_transition() {
     assert_eq!(plan_active.status, PlanStatus::Active);
     assert_eq!(plan_active.balance, 400);
 }
+
+#[test]
+fn test_savings_plan_deposit_to_vault() {
+    let (env, client, admin, fee_recipient, sender, _, token_address) = setup_test();
+    let vault_contract = Address::generate(&env);
+    let token_client = soroban_sdk::token::Client::new(&env, &token_address);
+
+    client.initialize(&admin, &fee_recipient, &0);
+    client.set_vault_contract(&vault_contract);
+    assert_eq!(client.get_vault_contract(), vault_contract);
+
+    client.register_user(
+        &sender,
+        &Symbol::new(&env, "NG"),
+        &Bytes::from_slice(&env, b"+234"),
+    );
+
+    let plan_id = client.create_savings_plan(
+        &sender,
+        &Symbol::new(&env, "YieldGoal"),
+        &1000,
+        &token_address,
+        &None,
+    );
+
+    client.deposit_to_plan(&sender, &plan_id, &500, &token_address);
+    let plan = client.get_savings_plan(&sender, &plan_id);
+    assert_eq!(plan.balance, 500);
+
+    // Route 300 to vault pool #0
+    let deposited = client.deposit_plan_to_vault(&sender, &plan_id, &0, &300);
+    assert_eq!(deposited, 300);
+
+    let plan_after = client.get_savings_plan(&sender, &plan_id);
+    assert_eq!(plan_after.balance, 200);
+    assert_eq!(token_client.balance(&vault_contract), 300);
+}

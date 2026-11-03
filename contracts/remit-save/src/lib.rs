@@ -613,6 +613,80 @@ impl RemitSave {
 
         Ok(withdraw_amount)
     }
+
+    pub fn set_vault_contract(env: Env, vault_contract: Address) -> Result<(), RemitError> {
+        let admin = Self::get_admin(env.clone())?;
+        admin.require_auth();
+        env.storage()
+            .instance()
+            .set(&DataKey::VaultContract, &vault_contract);
+        Ok(())
+    }
+
+    pub fn get_vault_contract(env: Env) -> Result<Address, RemitError> {
+        env.storage()
+            .instance()
+            .get(&DataKey::VaultContract)
+            .ok_or(RemitError::NotInitialized)
+    }
+
+    pub fn deposit_plan_to_vault(
+        env: Env,
+        owner: Address,
+        plan_id: u32,
+        pool_id: u32,
+        amount: i128,
+    ) -> Result<i128, RemitError> {
+        if Self::is_paused(env.clone()) {
+            return Err(RemitError::ContractPaused);
+        }
+        owner.require_auth();
+
+        if amount <= 0 {
+            return Err(RemitError::InvalidAmount);
+        }
+
+        let plan_key = DataKey::Plan(owner.clone(), plan_id);
+        let mut plan: SavingsPlan = env
+            .storage()
+            .persistent()
+            .get(&plan_key)
+            .ok_or(RemitError::PlanNotFound)?;
+
+        if !matches!(plan.status, PlanStatus::Active | PlanStatus::Completed) {
+            return Err(RemitError::PlanClosed);
+        }
+
+        if amount > plan.balance {
+            return Err(RemitError::InvalidAmount);
+        }
+
+        let vault_contract = Self::get_vault_contract(env.clone())?;
+        let token_client = soroban_sdk::token::Client::new(&env, &plan.local_asset);
+        token_client.transfer(&env.current_contract_address(), &vault_contract, &amount);
+
+        plan.balance = plan
+            .balance
+            .checked_sub(amount)
+            .ok_or(RemitError::Overflow)?;
+
+        if plan.balance == 0 {
+            plan.status = PlanStatus::Withdrawn;
+        }
+
+        env.storage().persistent().set(&plan_key, &plan);
+
+        env.events().publish(
+            (
+                Symbol::new(&env, "plan_vault_deposit"),
+                owner,
+                vault_contract,
+            ),
+            (plan_id, pool_id, amount),
+        );
+
+        Ok(amount)
+    }
 }
 
 #[cfg(test)]
