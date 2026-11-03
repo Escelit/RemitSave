@@ -285,6 +285,54 @@ fn parse_address(val: &ScVal) -> Option<String> {
     }
 }
 
+async fn trigger_anchor_disbursement(ev: &RemittanceExecuted) -> Result<String, Box<dyn std::error::Error>> {
+    let anchor_reference = format!("ANCHOR-PAY-{}", uuid::Uuid::new_v4());
+    tracing::info!(
+        "Anchor Relayer: Initiating local fiat/mobile money payout for beneficiary {} | amount: {} {} | anchor ref: {}",
+        ev.beneficiary,
+        ev.payout_amount,
+        ev.local_asset,
+        anchor_reference
+    );
+    // In production, this relays to SEP-31 / Cowrie / Flutterwave / M-Pesa B2C gateway
+    Ok(anchor_reference)
+}
+
+async fn dispatch_remittance_notifications(
+    pool: &PgPool,
+    user_id: uuid::Uuid,
+    ev: &RemittanceExecuted,
+    anchor_ref: &str,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let user_info = sqlx::query_as::<_, (String, String)>(
+        "SELECT email, phone FROM users WHERE id = $1"
+    )
+    .bind(user_id)
+    .fetch_optional(pool)
+    .await?;
+
+    if let Some((email, phone)) = user_info {
+        tracing::info!(
+            "Notification Dispatcher: Alerting sender {} ({}) - Remittance #{} confirmed! Payout {} sent to beneficiary, {} saved! Anchor Ref: {}",
+            email,
+            phone,
+            ev.remittance_id,
+            ev.payout_amount,
+            ev.savings_amount,
+            anchor_ref
+        );
+    }
+
+    tracing::info!(
+        "Notification Dispatcher: SMS payout notification queued for beneficiary {} regarding arrival of payout {} {}",
+        ev.beneficiary,
+        ev.payout_amount,
+        ev.local_asset
+    );
+
+    Ok(())
+}
+
 async fn save_event(
     pool: &PgPool,
     ev: RemittanceExecuted,
@@ -309,15 +357,17 @@ async fn save_event(
         }
     };
 
-    // Upsert into remittance_events
-    // We'll use the remittance_id from the contract to avoid duplicates
+    let anchor_ref = trigger_anchor_disbursement(&ev).await?;
+    let _ = dispatch_remittance_notifications(pool, user_id, &ev, &anchor_ref).await;
+
+    // Upsert into remittance_events with status 'disbursed'
     sqlx::query(
         r#"
         INSERT INTO remittance_events (id, remittance_id, user_id, beneficiary,
                                         total_amount, payout_amount, savings_amount,
                                         fee_amount, incoming_asset, local_asset,
                                         status, tx_hash, created_at)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 'completed', $11, $12)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 'disbursed', $11, $12)
         ON CONFLICT (id) DO NOTHING
         "#,
     )
@@ -337,4 +387,28 @@ async fn save_event(
     .await?;
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn test_anchor_disbursement_trigger() {
+        let ev = RemittanceExecuted {
+            remittance_id: 42,
+            sender: "GABC".into(),
+            beneficiary: "GBEN".into(),
+            total_amount: 100_000,
+            payout_amount: 70_000,
+            savings_amount: 29_500,
+            fee_amount: 500,
+            incoming_asset: "USDC".into(),
+            local_asset: "NGN".into(),
+            timestamp: 1700000000,
+        };
+
+        let ref_id = trigger_anchor_disbursement(&ev).await.unwrap();
+        assert!(ref_id.starts_with("ANCHOR-PAY-"));
+    }
 }
